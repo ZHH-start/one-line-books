@@ -41,12 +41,11 @@
     function renderHeader() {
         var st = ZH.state;
         var t = { overview: '概览', record: '记账', stats: '统计', detail: '明细', settings: '设置' }[st.view] || '';
-        var left = '', right = '';
+        var left = '';
         if (st.view === 'overview') {
             left = '<button class="btn" data-act="switchLedger" style="max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + U.esc(st.ledger.header.name) + ' ▾</button>';
-            right = '<button class="icon-btn" data-act="gotoSettings" title="设置">' + ico('gear') + '</button>';
         }
-        U.$('#hdr').innerHTML = '<div class="h-left">' + left + '</div><div class="h-mid">' + t + '</div><div class="h-right">' + right + '</div>';
+        U.$('#hdr').innerHTML = '<div class="h-left">' + left + '</div><div class="h-mid">' + t + '</div><div class="h-right"></div>';
     }
 
     function renderNav() {
@@ -162,9 +161,6 @@
             [['system', '跟随系统'], ['light', '日间'], ['dark', '夜间']].map(function (t) {
                 return '<button class="btn' + ((s.theme || 'system') === t[0] ? ' on' : '') + '" data-act="setTheme" data-theme="' + t[0] + '">' + t[1] + '</button>';
             }).join('') + '</div></div>';
-        h += '<div class="card"><b>版本检查</b><div class="between"><span>启动时检查更新</span>' +
-            '<button class="btn" data-act="toggleUpdate">' + (s.checkUpdate ? '已开启' : '已关闭') + '</button></div>' +
-            '<div class="sub" style="margin-top:6px">当前版本 ' + ZH.util.esc(window.APP_VERSION) + '</div></div>';
         h += '<div class="card"><b>账本管理</b><div class="row" style="margin-top:10px;flex-wrap:wrap">' +
             '<button class="btn" data-act="newLedger">新建账本</button>' +
             '<button class="btn" data-act="editCategories">编辑分类表</button>' +
@@ -177,6 +173,16 @@
             '</div></div>';
         h += '<div class="card"><b>用户分类规则</b>' +
             (st.ledger.header.userRules.length ? st.ledger.header.userRules.map(function (r) { return '<div class="sub">• ' + U.esc(r.rule) + ' → ' + U.esc(r.category) + '</div>'; }).join('') : '<div class="sub">暂无</div>') +
+            '</div>';
+        /* 设置最后一条：启动时自动更新开关 + 本版本更新内容。
+           开关关闭 = 纯本地运行；打开时检查一次，若有更新则提示先备份、刷新即更新。 */
+        h += '<div class="card"><b>更新</b>' +
+            '<div class="between" style="margin-top:8px"><span>当前版本</span><span class="sub">' + U.esc(window.APP_VERSION) + '</span></div>' +
+            '<div class="between" style="margin-top:8px"><span>启动时自动更新</span>' +
+            '<button class="btn" data-act="toggleUpdate">' + (s.checkUpdate ? '已开启' : '已关闭') + '</button></div>' +
+            '<div class="sub" style="margin-top:6px">关闭后 App 纯本地运行，不检查也不更新。</div>' +
+            '<div style="margin-top:12px"><div class="sub"><b>本次版本更新内容（' + U.esc(window.APP_VERSION) + '）</b></div>' +
+            '<div class="sub">' + U.esc(window.APP_NOTES || '无') + '</div></div>' +
             '</div>';
         return h;
     }

@@ -15,7 +15,7 @@
 - 导出/拆分/导入：完整导出、按时间范围部分导出（移出并仅下载）、导入（同名拒绝）。
 - 本地优先：`localStorage` 存储 + `navigator.storage.persist()`；iOS 非 standalone 引导添加到主屏幕。
 - 主题模式：跟随系统 / 日间 / 夜间，设置页切换，本地持久化，暗色适配统计图表。
-- 版本检查：启动对比 `version.json`，可忽略或关闭。
+- 启动时自动更新：启动对比 `version.json`，检测到新版本即自动刷新加载最新资源，完成后仅提示「升级好了 + 本次更新内容」；更新仅刷新静态资源，**不清除任何本地数据与核心配置**，同一版本只处理一次不反复弹。设置页「更新」开关关闭即纯本地运行；打开时若存在更新会提醒先备份、刷新即更新。
 
 ## 文件结构
 
@@ -60,17 +60,12 @@ python3 -m http.server 8080
 
 ## 测试
 
-端到端（jsdom，桩掉 fetch，覆盖新建/记账/更正/删除/拒绝/校验/统计/持久化/级联清理）：
+jsdom 冒烟（桩掉 fetch，无需真实 API），保留在仓库中供持续复用：
 
 ```bash
-npm i jsdom      # 仅测试需要
-node tests/e2e.js
-```
-
-真实 API 冒烟（可选，消耗 token）：
-
-```bash
-DEEPSEEK_KEY=sk-xxx DEEPSEEK_MODEL=deepseek-flash node tests/smoke-api.js "午饭 35"
+npm i jsdom                    # 仅测试需要
+node tests/feature.smoke.js    # 主题三态 + 流式对话（SSE 解析 / 状态气泡 / 记账写入）
+node tests/upgrade.smoke.js    # 版本检查 / 首页升级弹窗 / 忽略版本 / 升级保留数据与配置
 ```
 
 ## 待办（二期）

@@ -187,13 +187,31 @@
         state.settings.model = U.$('#set_model').value.trim();
         saveSettings(); U.toast('已保存');
     }
-    function toggleUpdate() { state.settings.checkUpdate = !state.settings.checkUpdate; saveSettings(); render(); }
+    /* 启动时自动更新开关：
+       - 关闭 → 纯本地运行（不检查、不更新）。
+       - 打开 → 先检查一次；若确有可升级版本，提醒先备份账单，刷新页面即更新。 */
+    function toggleUpdate() {
+        if (state.settings.checkUpdate) {
+            state.settings.checkUpdate = false; saveSettings(); render();
+            U.toast('已关闭自动更新，App 将纯本地运行');
+            return;
+        }
+        state.settings.checkUpdate = true; saveSettings(); if (state.view === 'settings') render();
+        fetch('version.json', { cache: 'no-store' }).then(function (r) {
+            if (!r.ok) throw 0; return r.json();
+        }).then(function (v) {
+            if (v && v.version && v.version !== window.APP_VERSION && !isHandled(v)) {
+                V.openModal('<h3>有新版本可用</h3><p class="sub">建议先备份账单（设置 → 完整导出），刷新页面将会直接更新到最新版本。</p>' +
+                    '<div class="modal-actions"><button class="btn primary" data-act="closeModal">知道了</button></div>');
+            } else { U.toast('已开启自动更新，将在启动时自动更新'); }
+            if (state.view === 'settings') render();
+        }).catch(function () { U.toast('已开启自动更新，将在启动时自动更新'); if (state.view === 'settings') render(); });
+    }
 
     // 事件分发回调对应表
     var ACTIONS = {
         closeModal: closeModalAct,
         nav: function (el) { state.view = el.getAttribute('data-view'); render(); },
-        gotoSettings: function () { state.view = 'settings'; render(); },
         switchLedger: function () { V.modalSwitchLedger(); },
         pickLedger: function (el) { openLedger(el.getAttribute('data-id')); V.closeModal(); },
         newLedger: function () { V.modalNewLedger(); },
@@ -229,7 +247,7 @@
         setTheme: setTheme,
         statMode: function (el) { state.statMode = el.getAttribute('data-mode'); render(); },
         pendingResend: function () { ZH.chat.resendPending(); },
-        pendingDiscard: function () { ZH.chat.discardPending(); }
+        pendingDiscard: function () { ZH.chat.discardPending(); },
     };
 
     // 点击行为触发事件 事件分发器
@@ -259,18 +277,59 @@
     }
     function onSystemThemeChange() { if ((state.settings.theme || 'system') === 'system') applyTheme(); }
 
-    /* ---------- 版本检查 ---------- */
+    /* ---------- 版本检查与自动升级 ---------- */
+    /* 升级采用「自动升级」：检测到服务器有新版本即自动刷新加载最新静态资源，
+       随后只向用户提示「升级好了 + 本次更新内容」，不提供也不允许选择跳过。
+       关键：绝不清除任何 localStorage —— 账本、对话、pending 缓冲、以及 zh:settings 内的
+       API Key / 模型 / 主题等核心配置全部原样保留。
+       升级前对全部核心键做快照写入 zh:justUpgraded，回到新版后按需回填，配置不会被干掉。
+       同一 remote 版本只处理一次（done 标记），彻底避免反复刷新/反复弹窗。 */
+    function coreKeys() {
+        var keys = [K.settings, K.idx, K.cur, K.justUpgraded];
+        state.index.forEach(function (it) {
+            keys.push(K.ledger(it.id)); keys.push(K.chat(it.id)); keys.push(K.pending(it.id)); keys.push(K.lastExport(it.id));
+        });
+        return keys;
+    }
+    function snapshotCore() {
+        var snap = {};
+        coreKeys().forEach(function (k) { var v = localStorage.getItem(k); if (v != null) snap[k] = v; });
+        return snap;
+    }
+    function restoreCore(snap) {
+        if (!snap) return;
+        Object.keys(snap).forEach(function (k) { if (localStorage.getItem(k) == null) localStorage.setItem(k, snap[k]); });
+    }
+    /* 该版本是否已处理过（zh:justUpgraded 命中）——用于去重，避免缓存导致版本号滞后时反复刷新/误报 */
+    function isHandled(v) { var ju = Store.get(K.justUpgraded, null); return !!(ju && ju.version === v.version); }
+
+    /* 升级好了：只提示成功与本次更新内容 */
+    function showUpgradeDone(notes) {
+        V.openModal('<h3>升级好了</h3>' +
+            '<p class="sub">已更新到最新版本，本地数据与设置均保留。</p>' +
+            '<p class="sub"><b>本次更新内容</b></p>' +
+            '<p class="sub">' + U.esc(notes || '无') + '</p>' +
+            '<div class="modal-actions"><button class="btn primary" data-act="closeModal">知道了</button></div>');
+    }
+
+    /* 自动更新：快照核心键后刷新加载最新资源；同一版本只触发一次，避免循环刷新 */
+    function autoUpgrade(v) {
+        if (!v || !v.version || v.version === window.APP_VERSION) return;
+        if (isHandled(v)) return;
+        Store.set(K.justUpgraded, { version: v.version, notes: v.notes || '', snap: snapshotCore() });
+        try { location.reload(); } catch (e) { /* 环境无法刷新（如测试），由下次启动检测兜底 */ }
+    }
+
+    /* 启动时自动更新：检测到新版本即刷新加载最新资源；开关关闭则纯本地（不检查不更新） */
     function checkVersion() {
         if (!state.settings.checkUpdate) return;
         fetch('version.json', { cache: 'no-store' }).then(function (r) {
             if (!r.ok) throw 0; return r.json();
         }).then(function (v) {
-            if (v && v.version && v.version !== window.APP_VERSION) {
-                var html = '<h3>发现新版本</h3><p class="sub">最新版本 ' + U.esc(v.version) + '，当前 ' + window.APP_VERSION + '。可忽略继续使用旧版本。</p>' +
-                    (v.notes ? '<p class="sub">' + U.esc(v.notes) + '</p>' : '') +
-                    '<div class="modal-actions"><button class="btn primary" data-act="closeModal">知道了</button></div>';
-                V.openModal(html);
-            }
+            if (!v || !v.version) return;
+            if (v.version === window.APP_VERSION) { if (isHandled(v)) Store.del(K.justUpgraded); return; }
+            if (isHandled(v)) return; // 该版本已升级过，不再刷新
+            autoUpgrade(v);
         }).catch(function () { });
     }
 
@@ -291,6 +350,15 @@
     /* ---------- 启动 ---------- */
     function boot() {
         loadSettings(); applyTheme(); loadIndex();
+        // 升级完成检测：自动升级刷新后回到此处。回填核心键（保留全部配置），标记已处理，提示「升级好了」。
+        var ju = Store.get(K.justUpgraded, null);
+        var didUpgrade = false, upgradeNotes = '';
+        if (ju && !ju.done && ju.version) {
+            restoreCore(ju.snap);
+            Store.set(K.justUpgraded, { version: ju.version, notes: ju.notes || '', done: true });
+            loadSettings(); applyTheme(); // 回填后重新加载，确保内存配置与存储一致
+            didUpgrade = true; upgradeNotes = ju.notes || '';
+        }
         var tm = themeMedia();
         if (tm) { if (tm.addEventListener) tm.addEventListener('change', onSystemThemeChange); else if (tm.addListener) tm.addListener(onSystemThemeChange); }
         S.persistStorage(); checkVersion(); iosGuide();
@@ -304,6 +372,7 @@
         }
         render();
         if (state.ledger && state.pending.length) setTimeout(ZH.chat.askPending, 400);
+        if (didUpgrade) setTimeout(function () { showUpgradeDone(upgradeNotes); }, 300);
 
         document.addEventListener('click', handleClick);
         document.addEventListener('input', function (e) {

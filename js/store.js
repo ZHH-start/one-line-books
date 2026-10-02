@@ -8,7 +8,8 @@
         ledger: function (id) { return 'zh:ledger:' + id; },
         chat: function (id) { return 'zh:chat:' + id; },
         pending: function (id) { return 'zh:pending:' + id; },
-        lastExport: function (id) { return 'zh:lastExport:' + id; }
+        lastExport: function (id) { return 'zh:lastExport:' + id; },
+        iosGuided: 'zh:iosGuided'
     };
     var Store = {
         get: function (k, def) { try { var v = localStorage.getItem(k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } },

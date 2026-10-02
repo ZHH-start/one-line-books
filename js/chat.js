@@ -52,7 +52,7 @@
         var text = (input.value || '').trim();
         if (!text) return;
         input.value = '';
-        st.chat.push({ role: 'user', text: text, ts: Date.now() });
+        st.chat.push({ role: 'user', text: text });
         ZH.app.saveChat(); renderChatList(); scrollChat();
 
         ZH.ai.callAI(text).then(function (json) {
@@ -81,7 +81,7 @@
                 return;
             }
             // 发送失败：按账本隔离的 pending 缓冲，记录所属账本 id 作二次校验
-            st.pending.push({ ledgerId: st.currentId, text: text, ts: Date.now(), time: U.nowPrefix() });
+            st.pending.push({ ledgerId: st.currentId, text: text, time: U.nowPrefix() });
             ZH.app.savePending();
             pushAI('发送失败，内容已保留，稍后可重试。（' + (err && err.message ? err.message : '网络错误') + '）');
         });

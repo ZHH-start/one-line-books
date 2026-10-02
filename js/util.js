@@ -6,20 +6,15 @@
     function $(sel, root) { return (root || document).querySelector(sel); }
     function uuid() { return 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
-    var AMP = String.fromCharCode(38);
-    var ESCMAP = { '&': AMP + 'amp;', '<': AMP + 'lt;', '>': AMP + 'gt;', '"': AMP + 'quot;', "'": AMP + '#39;' };
+    var ESCMAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ESCMAP[c]; }); }
 
     function fmt(n) { n = Number(n) || 0; return (Math.round(n * 100) / 100).toFixed(2); }
     function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 
+    /* 统一使用设备本地时间 */
     function todayStr() {
-        var st = ZH.state || { settings: {} };
-        var tz = st.settings && st.settings.timezone;
         var d = new Date();
-        if (tz && tz !== 'auto') {
-            try { return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d); } catch (e) { }
-        }
         return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
     }
     function nowPrefix() {
@@ -32,5 +27,5 @@
     }
     function colorAt(i) { return COLORS[i % COLORS.length]; }
 
-    ZH.util = { $: $, uuid: uuid, esc: esc, fmt: fmt, pad2: pad2, todayStr: todayStr, nowPrefix: nowPrefix, toast: toast, colorAt: colorAt, COLORS: COLORS };
+    ZH.util = { $: $, uuid: uuid, esc: esc, fmt: fmt, todayStr: todayStr, nowPrefix: nowPrefix, toast: toast, colorAt: colorAt };
 })(window.ZH = window.ZH || {});

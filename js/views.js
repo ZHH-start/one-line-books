@@ -158,9 +158,6 @@
             '<label class="f">API Key</label><input id="set_key" type="password" value="' + U.esc(s.apiKey) + '">' +
             '<label class="f">模型名</label><input id="set_model" value="' + U.esc(s.model) + '">' +
             '<div style="margin-top:12px"><button class="btn primary" data-act="saveAIConfig">保存</button></div></div>';
-        h += '<div class="card"><b>时区</b>' +
-            '<label class="f">默认自动识别设备本地时区</label><input id="set_tz" value="' + U.esc(s.timezone || 'auto') + '" placeholder="auto 或 Asia/Shanghai">' +
-            '<div style="margin-top:12px"><button class="btn primary" data-act="saveTZ">保存</button></div></div>';
         h += '<div class="card"><b>版本检查</b><div class="between"><span>启动时检查更新</span>' +
             '<button class="btn" data-act="toggleUpdate">' + (s.checkUpdate ? '已开启' : '已关闭') + '</button></div>' +
             '<div class="sub" style="margin-top:6px">当前版本 ' + ZH.util.esc(window.APP_VERSION) + '</div></div>';
@@ -236,6 +233,11 @@
         openModal('<h3>切换账本</h3>' + (items || '<div class="sub">无</div>') +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">关闭</button></div>');
     }
+    function modalEditLedger() {
+        openModal('<h3>编辑账本名</h3>' +
+            '<label class="f">账本名</label><input id="el_name" value="' + U.esc(ZH.state.ledger.header.name) + '">' +
+            '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="saveLedgerName">保存</button></div>');
+    }
     function modalEditRecord(idx) {
         var r = ZH.state.ledger.records[idx]; if (!r) return;
         var cats = (r.type === '收入' ? ZH.state.ledger.header.incomeCategories : ZH.state.ledger.header.expenseCategories);
@@ -265,6 +267,7 @@
         viewOverview: viewOverview, viewStats: viewStats, viewDetail: viewDetail, viewSettings: viewSettings,
         openModal: openModal, closeModal: closeModal, modalNewLedger: modalNewLedger, modalEditGoal: modalEditGoal,
         modalEditCategories: modalEditCategories, modalMergeCategory: modalMergeCategory, modalEditUserRules: modalEditUserRules,
+        modalEditLedger: modalEditLedger,
         modalSplit: modalSplit, modalSwitchLedger: modalSwitchLedger, modalEditRecord: modalEditRecord, modalRecordFromChat: modalRecordFromChat
     };
 })(window.ZH = window.ZH || {});

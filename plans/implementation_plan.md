@@ -22,7 +22,7 @@
 ```text
 index.html         页面骨架、静态容器、按序引入脚本与样式
 css/style.css      全部样式（含 iOS 安全区适配）
-js/util.js         日期、金额格式化、时区、转义、UUID、toast
+js/util.js         日期、金额格式化、转义、UUID、toast
 js/store.js        localStorage 读写封装、键命名、persist 请求
 js/templates.js    预设模板（生活 / 项目研发）
 js/ledger.js       md 解析 / 序列化 / 一致性校验 / 记录增删改
@@ -67,7 +67,7 @@ flowchart TD
 zh:index                 账本索引 [{id, name, template, updatedAt}]
 zh:ledger:<id>           账本 md 文本（账本头 + 空行 + 记录）
 zh:current               当前账本 id
-zh:settings              {apiBaseUrl, apiKey, model, timezone, checkUpdate}
+zh:settings              {apiBaseUrl, apiKey, model, checkUpdate}
 zh:chat:<id>             该账本对话记录数组，不参与导出
 zh:pending:<id>          该账本发送失败缓冲（原文 + 时间前缀）
 zh:lastExport:<id>       最近一次导出时间戳
@@ -157,7 +157,6 @@ zh:lastExport:<id>       最近一次导出时间戳
 
 ### 5.6 设置
 - AI：API Base URL、API Key、模型名。
-- 时区：默认设备本地，可手动选择。
 - 储蓄目标配置（写回账本头）。
 - 版本检查开关。
 - 账本管理：新建（选模板）、删除（二次确认 + 建议先导出 + 级联清除附属键，详见 4.1）、编辑分类表、用户自定义分类规则（文本框，一行一条）、导入、导出 / 拆分。
@@ -173,7 +172,7 @@ zh:lastExport:<id>       最近一次导出时间戳
 
 ### 7.1 请求
 - OpenAI 兼容 Chat Completions；默认 DeepSeek；浏览器直连。
-- 每次请求注入当前日期（按设置时区）。
+- 每次请求注入当前日期（设备本地时间）。
 
 ### 7.2 自动分类决策顺序（写入 prompt）
 1. 先查用户强制定义（用户规则）。

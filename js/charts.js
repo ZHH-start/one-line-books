@@ -59,5 +59,5 @@
         return '<svg class="chart" width="100%" viewBox="0 0 ' + w + ' ' + hgt + '" preserveAspectRatio="xMidYMid meet">' + grid + poly('inc', '#34c759') + poly('exp', '#ff3b30') + labels + '</svg>';
     }
 
-    ZH.charts = { pieBlock: pieBlock, pieChart: pieChart, lineChart: lineChart };
+    ZH.charts = { pieBlock: pieBlock, lineChart: lineChart };
 })(window.ZH = window.ZH || {});

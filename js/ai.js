@@ -3,12 +3,11 @@
     'use strict';
 
     function buildSystemPrompt() {
-        var st = ZH.state;
-        var he = st.ledger.header;
+        var he = ZH.state.ledger.header;
         var date = ZH.util.todayStr();
         var lines = [];
         lines.push('你是一个中文记账助手。用户用自然语言描述一笔或多笔收支，你负责解析为结构化数据。');
-        lines.push('当前日期：' + date + '（时区按用户设置）。解析"昨天""前天"等相对日期必须以该日期为基准。');
+        lines.push('当前日期：' + date + '。解析"昨天""前天"等相对日期必须以该日期为基准。');
         lines.push('当前账本分类表：');
         lines.push('- 支出分类：' + he.expenseCategories.join('、'));
         lines.push('- 收入分类：' + he.incomeCategories.join('、'));
@@ -30,39 +29,50 @@
         return lines.join('\n');
     }
 
+    /* 最近记录，供模型定位"上一条"/指定日期的记录 */
     function recentRecords() {
-        var st = ZH.state;
-        var rs = st.ledger.records.slice(-15);
-        return rs.map(function (r) { return r.date + ' | ' + r.type + ' | ' + r.category + ' | ' + ZH.util.fmt(r.amount) + ' | ' + (r.note || ''); }).join('\n');
+        return ZH.state.ledger.records.slice(-15).map(function (r) {
+            return r.date + ' | ' + r.type + ' | ' + r.category + ' | ' + ZH.util.fmt(r.amount) + ' | ' + (r.note || '');
+        }).join('\n');
     }
 
-    function extractJson(s) {
-        s = String(s || '').trim();
-        try { return JSON.parse(s); } catch (e) { }
-        var m = s.match(/\{[\s\S]*\}/);
+    /* 从 Chat Completions 原始响应中取出结构化 JSON。
+       模型可能带前后缀文字，故先整体解析，失败再截取花括号片段兜底。 */
+    function parseAIResponse(data) {
+        var choice = data && data.choices && data.choices[0] && data.choices[0].message;
+        if (!choice) return null;
+        var content = String(choice.content || '').trim();
+        try { return JSON.parse(content); } catch (e) { }
+        var m = content.match(/\{[\s\S]*\}/);
         if (m) { try { return JSON.parse(m[0]); } catch (e) { } }
         return null;
     }
 
+    /* 组装用户消息：注入最近记录用于定位，再附本次输入 */
+    function userMessage(userText) {
+        return '【最近记录，供定位参考】\n' + (recentRecords() || '（无）') + '\n\n【本次输入】\n' + userText;
+    }
+
     function callAI(userText) {
-        var st = ZH.state;
-        var s = st.settings;
+        var s = ZH.state.settings;
         if (!s.apiBaseUrl || !s.apiKey || !s.model) return Promise.reject({ code: 'NO_API' });
         var url = s.apiBaseUrl.replace(/\/+$/, '') + '/chat/completions';
-        var messages = [
-            { role: 'system', content: buildSystemPrompt() },
-            { role: 'user', content: '【最近记录，供定位参考】\n' + (recentRecords() || '（无）') + '\n\n【本次输入】\n' + userText }
-        ];
+        var payload = {
+            model: s.model, temperature: 0, response_format: { type: 'json_object' },
+            messages: [
+                { role: 'system', content: buildSystemPrompt() },
+                { role: 'user', content: userMessage(userText) }
+            ]
+        };
         return fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + s.apiKey },
-            body: JSON.stringify({ model: s.model, messages: messages, temperature: 0, response_format: { type: 'json_object' } })
+            body: JSON.stringify(payload)
         }).then(function (resp) {
             if (!resp.ok) return resp.text().then(function (t) { throw new Error('HTTP ' + resp.status + ' ' + t.slice(0, 120)); });
             return resp.json();
         }).then(function (data) {
-            var content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-            var json = extractJson(content);
+            var json = parseAIResponse(data);
             if (!json) throw new Error('返回内容无法解析为 JSON');
             return json;
         });
@@ -95,8 +105,7 @@
     }
 
     function locateRecord(t) {
-        var st = ZH.state;
-        var cands = st.ledger.records.map(function (r, i) { return { r: r, i: i }; });
+        var cands = ZH.state.ledger.records.map(function (r, i) { return { r: r, i: i }; });
         if (t.date) cands = cands.filter(function (x) { return x.r.date === t.date; });
         if (t.category) cands = cands.filter(function (x) { return x.r.category === t.category; });
         if (t.type) cands = cands.filter(function (x) { return x.r.type === t.type; });

@@ -86,7 +86,7 @@
         }
         h += '<div style="margin-top:10px"><button class="btn" data-act="editGoal">设置储蓄目标</button></div></div>';
         if (days !== null && days > 10) {
-            h += '<div class="card" style="background:#fff8e1">距上次导出：' + days + ' 天，建议<a href="javascript:void(0)" data-act="exportFull">导出备份</a>。</div>';
+            h += '<div class="card warn-card">距上次导出：' + days + ' 天，建议<a href="javascript:void(0)" data-act="exportFull">导出备份</a>。</div>';
         }
         return h;
     }
@@ -158,6 +158,10 @@
             '<label class="f">API Key</label><input id="set_key" type="password" value="' + U.esc(s.apiKey) + '">' +
             '<label class="f">模型名</label><input id="set_model" value="' + U.esc(s.model) + '">' +
             '<div style="margin-top:12px"><button class="btn primary" data-act="saveAIConfig">保存</button></div></div>';
+        h += '<div class="card"><b>外观</b><div class="sub" style="margin-top:6px">主题模式</div><div class="theme-opts">' +
+            [['system', '跟随系统'], ['light', '日间'], ['dark', '夜间']].map(function (t) {
+                return '<button class="btn' + ((s.theme || 'system') === t[0] ? ' on' : '') + '" data-act="setTheme" data-theme="' + t[0] + '">' + t[1] + '</button>';
+            }).join('') + '</div></div>';
         h += '<div class="card"><b>版本检查</b><div class="between"><span>启动时检查更新</span>' +
             '<button class="btn" data-act="toggleUpdate">' + (s.checkUpdate ? '已开启' : '已关闭') + '</button></div>' +
             '<div class="sub" style="margin-top:6px">当前版本 ' + ZH.util.esc(window.APP_VERSION) + '</div></div>';

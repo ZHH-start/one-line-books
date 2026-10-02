@@ -8,12 +8,14 @@
         index: [], currentId: null, ledger: null,
         settings: {}, chat: [], pending: [],
         view: 'overview', statMode: 'month',
-        detailQuery: '', detailMonth: ''
+        detailQuery: '', detailMonth: '',
+        chatBusy: null, chatAbort: null
     };
     ZH.state = state;
 
     function loadSettings() {
-        state.settings = Store.get(K.settings, { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-chat', checkUpdate: true });
+        state.settings = Store.get(K.settings, { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-chat', checkUpdate: true, theme: 'system' });
+        if (!state.settings.theme) state.settings.theme = 'system';
     }
     function saveSettings() { Store.set(K.settings, state.settings); }
     function sortIndex() { state.index.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); }); }
@@ -21,8 +23,15 @@
     function saveIndex() { sortIndex(); Store.set(K.idx, state.index); }
     function findIndexItem(id) { for (var i = 0; i < state.index.length; i++) if (state.index[i].id === id) return state.index[i]; return null; }
 
+    // 切换账本前取消进行中的流式请求（标记为切换，不计入失败缓冲）
+    function abortActiveRequest() {
+        if (state.chatAbort) { try { state.chatAbort.__abortReason = 'switch'; state.chatAbort.abort('switch'); } catch (e) { } }
+        state.chatAbort = null; state.chatBusy = null;
+    }
+
     // 打开账本
     function openLedger(id) {
+        abortActiveRequest();
         var text = Store.getText(K.ledger(id));
         if (text == null) { U.toast('账本不存在'); return; }
         var parsed = L.parse(text);
@@ -81,6 +90,7 @@
 
     // 删除账本
     function doDeleteLedger(id) {
+        abortActiveRequest();
         /* 级联清除全部附属键，避免孤儿数据 */
         Store.del(K.ledger(id)); Store.del(K.chat(id)); Store.del(K.pending(id)); Store.del(K.lastExport(id));
         state.index = state.index.filter(function (x) { return x.id !== id; });
@@ -212,6 +222,11 @@
         saveAIConfig: saveAIConfig,
         toggleUpdate: toggleUpdate,
         send: function () { ZH.chat.handleSend(); },
+        chatSend: function () { if (state.chatBusy) ZH.chat.stopRequest(); else ZH.chat.handleSend(); },
+        editUser: function (el) { ZH.chat.editUserMsg(el); },
+        cancelEditUser: function (el) { ZH.chat.cancelEditUserMsg(el); },
+        resendUser: function (el) { ZH.chat.resendUserMsg(el); },
+        setTheme: setTheme,
         statMode: function (el) { state.statMode = el.getAttribute('data-mode'); render(); },
         pendingResend: function () { ZH.chat.resendPending(); },
         pendingDiscard: function () { ZH.chat.discardPending(); }
@@ -224,6 +239,25 @@
         var fn = ACTIONS[el.getAttribute('data-act')];
         if (fn) fn(el, e);
     }
+
+    /* ---------- 主题模式 ---------- */
+    function themeMedia() { return window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null; }
+    function effectiveTheme() {
+        var t = state.settings.theme || 'system';
+        if (t === 'system') { var m = themeMedia(); return (m && m.matches) ? 'dark' : 'light'; }
+        return t;
+    }
+    function applyTheme() {
+        var dark = effectiveTheme() === 'dark';
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        var tc = document.querySelector('meta[name="theme-color"]');
+        if (tc) tc.setAttribute('content', dark ? '#000000' : '#ffffff');
+    }
+    function setTheme(el) {
+        state.settings.theme = el.getAttribute('data-theme') || 'system';
+        saveSettings(); applyTheme(); render();
+    }
+    function onSystemThemeChange() { if ((state.settings.theme || 'system') === 'system') applyTheme(); }
 
     /* ---------- 版本检查 ---------- */
     function checkVersion() {
@@ -256,7 +290,9 @@
 
     /* ---------- 启动 ---------- */
     function boot() {
-        loadSettings(); loadIndex();
+        loadSettings(); applyTheme(); loadIndex();
+        var tm = themeMedia();
+        if (tm) { if (tm.addEventListener) tm.addEventListener('change', onSystemThemeChange); else if (tm.addListener) tm.addListener(onSystemThemeChange); }
         S.persistStorage(); checkVersion(); iosGuide();
         if (state.currentId && findIndexItem(state.currentId)) {
             var txt = Store.getText(K.ledger(state.currentId));
@@ -281,7 +317,16 @@
             if (e.target.id === 'monthInput') { state.detailMonth = e.target.value; render(); }
         });
         document.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter' && e.target.id === 'chatInput') { e.preventDefault(); ZH.chat.handleSend(); }
+            if (e.key !== 'Enter') return;
+            if (e.target.id === 'chatInput') {
+                e.preventDefault();
+                if (state.chatBusy) return; // 进行中时 Enter 不发送
+                ZH.chat.handleSend();
+            } else if (e.target.id === 'editUserArea' && !e.shiftKey) {
+                e.preventDefault();
+                var btn = document.querySelector('#chatList [data-act="resendUser"]');
+                if (btn) ZH.chat.resendUserMsg(btn);
+            }
         });
     }
 

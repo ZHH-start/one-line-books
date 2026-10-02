@@ -44,19 +44,19 @@
         var grid = '';
         for (var g = 0; g <= 4; g++) {
             var y = pt + ih * g / 4;
-            grid += '<line x1="' + pl + '" y1="' + y + '" x2="' + (pl + iw) + '" y2="' + y + '" stroke="#eee"/>';
-            grid += '<text x="' + (pl - 4) + '" y="' + (y + 3) + '" font-size="9" text-anchor="end" fill="#8e8e93">' + Math.round(max * (4 - g) / 4) + '</text>';
+            grid += '<line x1="' + pl + '" y1="' + y + '" x2="' + (pl + iw) + '" y2="' + y + '" style="stroke:var(--chart-grid)"/>';
+            grid += '<text x="' + (pl - 4) + '" y="' + (y + 3) + '" font-size="9" text-anchor="end" style="fill:var(--chart-label)">' + Math.round(max * (4 - g) / 4) + '</text>';
         }
         function poly(key, color) {
-            return '<polyline fill="none" stroke="' + color + '" stroke-width="2" points="' + data.map(function (d, i) { return X(i).toFixed(1) + ',' + Y(d[key]).toFixed(1); }).join(' ') + '"/>' +
-                data.map(function (d, i) { return '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(d[key]).toFixed(1) + '" r="2.5" fill="' + color + '"/>'; }).join('');
+            return '<polyline fill="none" stroke-width="2" style="stroke:' + color + '" points="' + data.map(function (d, i) { return X(i).toFixed(1) + ',' + Y(d[key]).toFixed(1); }).join(' ') + '"/>' +
+                data.map(function (d, i) { return '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(d[key]).toFixed(1) + '" r="2.5" style="fill:' + color + '"/>'; }).join('');
         }
         var labels = data.map(function (d, i) {
             if (n > 8 && i % 2 !== 0) return '';
             var lb = d.label.length > 7 ? d.label.slice(5) : d.label;
-            return '<text x="' + X(i).toFixed(1) + '" y="' + (hgt - 6) + '" font-size="9" text-anchor="middle" fill="#8e8e93">' + esc(lb) + '</text>';
+            return '<text x="' + X(i).toFixed(1) + '" y="' + (hgt - 6) + '" font-size="9" text-anchor="middle" style="fill:var(--chart-label)">' + esc(lb) + '</text>';
         }).join('');
-        return '<svg class="chart" width="100%" viewBox="0 0 ' + w + ' ' + hgt + '" preserveAspectRatio="xMidYMid meet">' + grid + poly('inc', '#34c759') + poly('exp', '#ff3b30') + labels + '</svg>';
+        return '<svg class="chart" width="100%" viewBox="0 0 ' + w + ' ' + hgt + '" preserveAspectRatio="xMidYMid meet">' + grid + poly('inc', 'var(--income)') + poly('exp', 'var(--expense)') + labels + '</svg>';
     }
 
     ZH.charts = { pieBlock: pieBlock, lineChart: lineChart };

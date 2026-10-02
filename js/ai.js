@@ -36,16 +36,20 @@
         }).join('\n');
     }
 
-    /* 从 Chat Completions 原始响应中取出结构化 JSON。
-       模型可能带前后缀文字，故先整体解析，失败再截取花括号片段兜底。 */
+    /* 从字符串中提取结构化 JSON：整体解析失败则截取花括号片段兜底。 */
+    function extractJSON(str) {
+        str = String(str == null ? '' : str).trim();
+        try { return JSON.parse(str); } catch (e) { }
+        var m = str.match(/\{[\s\S]*\}/);
+        if (m) { try { return JSON.parse(m[0]); } catch (e) { } }
+        return null;
+    }
+
+    /* 从 Chat Completions 原始响应中取出结构化 JSON */
     function parseAIResponse(data) {
         var choice = data && data.choices && data.choices[0] && data.choices[0].message;
         if (!choice) return null;
-        var content = String(choice.content || '').trim();
-        try { return JSON.parse(content); } catch (e) { }
-        var m = content.match(/\{[\s\S]*\}/);
-        if (m) { try { return JSON.parse(m[0]); } catch (e) { } }
-        return null;
+        return extractJSON(choice.content);
     }
 
     /* 组装用户消息：注入最近记录用于定位，再附本次输入 */
@@ -53,9 +57,8 @@
         return '【最近记录，供定位参考】\n' + (recentRecords() || '（无）') + '\n\n【本次输入】\n' + userText;
     }
 
-    function callAI(userText) {
+    function buildRequest(userText, stream) {
         var s = ZH.state.settings;
-        if (!s.apiBaseUrl || !s.apiKey || !s.model) return Promise.reject({ code: 'NO_API' });
         var url = s.apiBaseUrl.replace(/\/+$/, '') + '/chat/completions';
         var payload = {
             model: s.model, temperature: 0, response_format: { type: 'json_object' },
@@ -64,15 +67,75 @@
                 { role: 'user', content: userMessage(userText) }
             ]
         };
-        return fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + s.apiKey },
-            body: JSON.stringify(payload)
-        }).then(function (resp) {
+        if (stream) payload.stream = true;
+        return {
+            url: url,
+            init: {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + s.apiKey },
+                body: JSON.stringify(payload)
+            }
+        };
+    }
+
+    /* 逐块读取 SSE 流，拼接 delta.content，每个内容块回调 onToken */
+    function readSSE(body, onToken) {
+        var reader = body.getReader();
+        var decoder = new TextDecoder('utf-8');
+        var buf = '', content = '';
+        function pump() {
+            return reader.read().then(function (res) {
+                if (res.done) return content;
+                buf += decoder.decode(res.value, { stream: true });
+                var lines = buf.split('\n'); buf = lines.pop();
+                for (var i = 0; i < lines.length; i++) {
+                    var line = lines[i].trim();
+                    if (!line || line.indexOf('data:') !== 0) continue;
+                    var data = line.slice(5).trim();
+                    if (!data || data === '[DONE]') continue;
+                    var chunk; try { chunk = JSON.parse(data); } catch (e) { continue; }
+                    var choice = chunk && chunk.choices && chunk.choices[0];
+                    var delta = choice && (choice.delta || choice.message);
+                    var piece = delta && delta.content;
+                    if (piece) { content += piece; if (onToken) onToken(); }
+                }
+                return pump();
+            });
+        }
+        return pump();
+    }
+
+    function requireApi() {
+        var s = ZH.state.settings;
+        if (!s.apiBaseUrl || !s.apiKey || !s.model) return false;
+        return true;
+    }
+
+    function callAI(userText) {
+        if (!requireApi()) return Promise.reject({ code: 'NO_API' });
+        var r = buildRequest(userText, false);
+        return fetch(r.url, r.init).then(function (resp) {
             if (!resp.ok) return resp.text().then(function (t) { throw new Error('HTTP ' + resp.status + ' ' + t.slice(0, 120)); });
             return resp.json();
         }).then(function (data) {
             var json = parseAIResponse(data);
+            if (!json) throw new Error('返回内容无法解析为 JSON');
+            return json;
+        });
+    }
+
+    /* 流式请求：优先 SSE 增量读取，环境不支持流时回退为普通解析。
+       opts: { signal, onToken } */
+    function callAIStream(userText, opts) {
+        opts = opts || {};
+        if (!requireApi()) return Promise.reject({ code: 'NO_API' });
+        var r = buildRequest(userText, true);
+        if (opts.signal) r.init.signal = opts.signal;
+        return fetch(r.url, r.init).then(function (resp) {
+            if (!resp.ok) return resp.text().then(function (t) { throw new Error('HTTP ' + resp.status + ' ' + t.slice(0, 120)); });
+            if (resp.body && resp.body.getReader) return readSSE(resp.body, opts.onToken).then(extractJSON);
+            return resp.json().then(parseAIResponse);
+        }).then(function (json) {
             if (!json) throw new Error('返回内容无法解析为 JSON');
             return json;
         });
@@ -119,5 +182,5 @@
         return { date: r.date, type: r.type, category: r.category, amount: Math.round(Number(r.amount) * 100) / 100, note: r.note || '' };
     }
 
-    ZH.ai = { buildSystemPrompt: buildSystemPrompt, callAI: callAI, validateAction: validateAction, locateRecord: locateRecord, normalize: normalize };
+    ZH.ai = { buildSystemPrompt: buildSystemPrompt, callAI: callAI, callAIStream: callAIStream, validateAction: validateAction, locateRecord: locateRecord, normalize: normalize };
 })(window.ZH = window.ZH || {});

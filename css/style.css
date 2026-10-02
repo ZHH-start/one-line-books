@@ -1,7 +1,14 @@
 :root{
   --bg:#f5f5f7; --card:#fff; --fg:#1c1c1e; --sub:#8e8e93; --line:#e5e5ea;
   --accent:#0a84ff; --danger:#ff3b30; --ok:#34c759; --income:#34c759; --expense:#ff3b30;
+  --warn-bg:#fff8e1; --chart-grid:#eee; --chart-label:#8e8e93;
   --sb:env(safe-area-inset-bottom,0px); --st:env(safe-area-inset-top,0px);
+}
+:root[data-theme="dark"]{
+  --bg:#000; --card:#1c1c1e; --fg:#f2f2f7; --sub:#98989f; --line:#38383a;
+  --accent:#0a84ff; --danger:#ff453a; --ok:#30d158; --income:#30d158; --expense:#ff453a;
+  --warn-bg:#3a3016; --chart-grid:#38383a; --chart-label:#98989f;
+  color-scheme:dark;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;height:100%}
@@ -49,6 +56,20 @@ label.f{display:block;margin:10px 0 4px;font-size:13px;color:var(--sub)}
 .chat-input{flex:none;display:flex;gap:8px;padding:8px 12px calc(8px + var(--sb));background:var(--card);border-top:1px solid var(--line)}
 .chat-input input{flex:1}
 .chip{display:inline-flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:4px 8px;margin:4px 4px 0 0;font-size:13px;cursor:pointer}
+/* 状态气泡 / 失败重发 / 气泡就地编辑 */
+.bubble.status{align-self:flex-start;background:var(--card);box-shadow:0 0 0 1px var(--line);border-bottom-left-radius:4px;color:var(--sub);display:inline-flex;align-items:center;gap:6px}
+.bubble.status .dots i{display:inline-block;width:5px;height:5px;margin-right:2px;border-radius:50%;background:var(--sub);animation:zbdot 1.2s infinite ease-in-out}
+.bubble.status .dots i:nth-child(2){animation-delay:.2s}
+.bubble.status .dots i:nth-child(3){animation-delay:.4s}
+@keyframes zbdot{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.bubble.ai.failed{box-shadow:0 0 0 1px var(--danger)}
+.bubble.user.editing{background:var(--card);box-shadow:0 0 0 1px var(--line);padding:8px;min-width:60%}
+.edit-area{width:100%;min-height:64px;font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;resize:vertical}
+.edit-actions{display:flex;gap:8px;margin-top:8px;justify-content:flex-end}
+.warn-card{background:var(--warn-bg)}
+/* 主题选择 */
+.theme-opts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.theme-opts button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 /* detail */
 .rec{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer}
 .rec .r-mid{flex:1;min-width:0}

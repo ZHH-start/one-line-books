@@ -7,6 +7,21 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#ffffff">
 <link rel="apple-touch-icon" href="icon.svg">
+<script>
+// 首屏渲染前设置 data-theme 与主题色，避免闪烁
+(function () {
+  try {
+    var m = 'system';
+    try { var raw = localStorage.getItem('zh:settings'); if (raw) m = JSON.parse(raw).theme || 'system'; } catch (e2) { }
+    var dark = m === 'dark' || (m !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    var tc = document.querySelector('meta[name="theme-color"]');
+    if (tc) tc.setAttribute('content', dark ? '#000000' : '#ffffff');
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/style.css">
 <title>记账</title>

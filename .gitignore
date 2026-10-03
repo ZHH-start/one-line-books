@@ -7,3 +7,5 @@ tests/
 # 临时文件
 *.log
 .DS_Store
+
+web_server/

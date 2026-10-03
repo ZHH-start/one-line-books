@@ -52,6 +52,12 @@ python3 -m http.server 8080
 - nginx 等静态托管，Basic Auth 由部署层负责（不属于本应用）。
 - 静态文件不得配超长强缓存（除非文件名带内容 hash），否则版本重校验失效；增量更新交由 HTTP 缓存协商。
 
+### 实际部署（家庭 ARM 服务器 RK3399）
+
+- 地址：http://192.168.0.47/ ，站点根目录 `/home/pi/www/ledger`，nginx 监听 80。
+- 配置与脚本见 [`deploy/`](deploy/README.md)：[`nginx-ledger.conf`](deploy/nginx-ledger.conf)（入口与 version.json 为 no-cache，静态资源协商缓存）、[`install-nginx.sh`](deploy/install-nginx.sh)（服务端 sudo 安装）、[`upload.sh`](deploy/upload.sh)（本地增量上传，无需 sudo）。
+- 更新发布：本地执行 `bash deploy/upload.sh` 覆盖静态资源即可，版本重校验由 [`version.json`](version.json) 承担。
+
 ## 使用
 
 1. 首次进入无账本态，点击「新建账本」选模板，或「导入账本」。

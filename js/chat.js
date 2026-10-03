@@ -158,7 +158,7 @@
                 failAI(userIdx, '尚未配置 API，请前往设置页配置后再记账。', false);
                 return;
             }
-            var why = reason === 'timeout' ? 'AI 无响应' : (aborted ? '已停止' : '发送失败');
+            var why = reason === 'timeout' ? 'AI 无响应' : (aborted ? '已停止' : '发送失败，请检查模型api接入配置。');
             if (reason !== 'switch') {
                 st.pending.push({ ledgerId: st.currentId, text: text, time: U.nowPrefix() });
                 ZH.app.savePending();

@@ -17,7 +17,7 @@ body{
   background:var(--bg);color:var(--fg);font-size:15px;line-height:1.5;
   -webkit-font-smoothing:antialiased;overscroll-behavior:none;
 }
-#app{display:flex;flex-direction:column;height:100dvh;height:100vh}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
 header{flex:none;padding:calc(var(--st) + 8px) 12px 8px;background:var(--card);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
 header .h-left,header .h-right{display:flex;gap:6px;align-items:center;flex:none}
 header .h-mid{flex:1;text-align:center;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

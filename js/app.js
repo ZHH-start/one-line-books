@@ -103,11 +103,14 @@
         V.closeModal(); render();
     }
 
+    /* 升级完成后若存在「待处理输入」，等升级提示关闭再询问，避免两个弹窗互相覆盖 */
+    var pendingAfterUpgrade = false;
     // 事件分发回调-业务动作
     function closeModalAct(el, e) {
         // 点击蒙层内部时冒泡到 mask，不应关闭；点蒙层空白处或关闭按钮才关
         if (el.classList.contains('mask') && e.target !== el) return;
         V.closeModal();
+        if (pendingAfterUpgrade) { pendingAfterUpgrade = false; setTimeout(ZH.chat.askPending, 60); }
     }
     function saveGoal() {
         var amt = parseFloat(U.$('#g_amt').value);
@@ -200,7 +203,9 @@
         fetch('version.json', { cache: 'no-store' }).then(function (r) {
             if (!r.ok) throw 0; return r.json();
         }).then(function (v) {
-            if (v && v.version && v.version !== window.APP_VERSION && !isHandled(v)) {
+            var s = Store.get(K.upgrade, null) || {};
+            var cur = s.version || window.APP_VERSION;
+            if (v && v.version && v.version !== cur) {
                 V.openModal('<h3>有新版本可用</h3><p class="sub">建议先备份账单（设置 → 完整导出），刷新页面将会直接更新到最新版本。</p>' +
                     '<div class="modal-actions"><button class="btn primary" data-act="closeModal">知道了</button></div>');
             } else { U.toast('已开启自动更新，将在启动时自动更新'); }
@@ -277,31 +282,20 @@
     }
     function onSystemThemeChange() { if ((state.settings.theme || 'system') === 'system') applyTheme(); }
 
-    /* ---------- 版本检查与自动升级 ---------- */
-    /* 升级采用「自动升级」：检测到服务器有新版本即自动刷新加载最新静态资源，
-       随后只向用户提示「升级好了 + 本次更新内容」，不提供也不允许选择跳过。
-       关键：绝不清除任何 localStorage —— 账本、对话、pending 缓冲、以及 zh:settings 内的
-       API Key / 模型 / 主题等核心配置全部原样保留。
-       升级前对全部核心键做快照写入 zh:justUpgraded，回到新版后按需回填，配置不会被干掉。
-       同一 remote 版本只处理一次（done 标记），彻底避免反复刷新/反复弹窗。 */
-    function coreKeys() {
-        var keys = [K.settings, K.idx, K.cur, K.justUpgraded];
-        state.index.forEach(function (it) {
-            keys.push(K.ledger(it.id)); keys.push(K.chat(it.id)); keys.push(K.pending(it.id)); keys.push(K.lastExport(it.id));
-        });
-        return keys;
+    /* ---------- 版本检查与自动升级（重构：不依赖 HTTP 缓存时序） ---------- */
+    function settleUpgrade() {
+        var s = Store.get(K.upgrade, null); // 检查升级标志位
+        if (s && s.phase === 'pending') { // pending状态，说明已经升级完成
+            var d = { phase: 'done', version: s.to || window.APP_VERSION, notes: s.notes || '', at: Date.now() }; // 已经升级，标志位调整为done
+            Store.set(K.upgrade, d); // 升级标志位置位
+            console.log('[升级完成] 本地加载到 ' + window.APP_VERSION + '，期望 ' + (s.to || '?'));
+            return d;
+        }
+        if (!s) { // 升级后首次加载
+            Store.set(K.upgrade, { phase: 'done', version: window.APP_VERSION, notes: '', at: Date.now() });
+        }
+        return null;
     }
-    function snapshotCore() {
-        var snap = {};
-        coreKeys().forEach(function (k) { var v = localStorage.getItem(k); if (v != null) snap[k] = v; });
-        return snap;
-    }
-    function restoreCore(snap) {
-        if (!snap) return;
-        Object.keys(snap).forEach(function (k) { if (localStorage.getItem(k) == null) localStorage.setItem(k, snap[k]); });
-    }
-    /* 该版本是否已处理过（zh:justUpgraded 命中）——用于去重，避免缓存导致版本号滞后时反复刷新/误报 */
-    function isHandled(v) { var ju = Store.get(K.justUpgraded, null); return !!(ju && ju.version === v.version); }
 
     /* 升级好了：只提示成功与本次更新内容 */
     function showUpgradeDone(notes) {
@@ -312,24 +306,33 @@
             '<div class="modal-actions"><button class="btn primary" data-act="closeModal">知道了</button></div>');
     }
 
-    /* 自动更新：快照核心键后刷新加载最新资源；同一版本只触发一次，避免循环刷新 */
-    function autoUpgrade(v) {
-        if (!v || !v.version || v.version === window.APP_VERSION) return;
-        if (isHandled(v)) return;
-        Store.set(K.justUpgraded, { version: v.version, notes: v.notes || '', snap: snapshotCore() });
-        try { location.reload(); } catch (e) { /* 环境无法刷新（如测试），由下次启动检测兜底 */ }
+    // 自动更新
+    function triggerUpgrade(v, cur) {
+        var ok = Store.set(K.upgrade, { phase: 'pending', to: v.version, notes: v.notes || '', from: cur, at: Date.now() });
+        if (!ok) { console.warn('[升级检测] 升级记录写入失败（存储可能已满），本次不刷新'); return false; }
+        console.log('[升级检测] 有新版本 ' + cur + ' → ' + v.version + '，刷新加载最新资源');
+        try { // 添加版本区分，强制重新获取
+            var u = new URL(location.href);
+            u.searchParams.set('_v', encodeURIComponent(v.version));
+            location.replace(u.toString());
+        } catch (e) {
+            try { location.reload(); } catch (e2) { /* 环境无法刷新（如测试），由下次启动检测兜底 */ }
+        }
+        return true;
     }
 
-    /* 启动时自动更新：检测到新版本即刷新加载最新资源；开关关闭则纯本地（不检查不更新） */
+    /* 启动时检查更新：拉远程 version.json，与本地“已完成版本”对比；不同才触发。 */
     function checkVersion() {
         if (!state.settings.checkUpdate) return;
         fetch('version.json', { cache: 'no-store' }).then(function (r) {
             if (!r.ok) throw 0; return r.json();
         }).then(function (v) {
             if (!v || !v.version) return;
-            if (v.version === window.APP_VERSION) { if (isHandled(v)) Store.del(K.justUpgraded); return; }
-            if (isHandled(v)) return; // 该版本已升级过，不再刷新
-            autoUpgrade(v);
+            var s = Store.get(K.upgrade, null) || {};
+            var cur = s.version || window.APP_VERSION;
+            console.log('[升级检测] 服务器=' + v.version + ' 本地已加载=' + cur);
+            if (v.version === cur) return; // 一致：已是最新
+            triggerUpgrade(v, cur);
         }).catch(function () { });
     }
 
@@ -348,20 +351,20 @@
     }
 
     /* ---------- 启动 ---------- */
+    var booted = false;
     function boot() {
+        if (booted) return; // 幂等：避免自动启动与手动触发重复初始化/重复绑定事件
+        booted = true;
         loadSettings(); applyTheme(); loadIndex();
-        // 升级完成检测：自动升级刷新后回到此处。回填核心键（保留全部配置），标记已处理，提示「升级好了」。
-        var ju = Store.get(K.justUpgraded, null);
+        /* 升级结算（本地、同步、零网络）：若上次留有 pending 记录，说明升级已生效，
+           本次即为“刚升级完成”→ 标记 done 并准备弹窗。*/
         var didUpgrade = false, upgradeNotes = '';
-        if (ju && !ju.done && ju.version) {
-            restoreCore(ju.snap);
-            Store.set(K.justUpgraded, { version: ju.version, notes: ju.notes || '', done: true });
-            loadSettings(); applyTheme(); // 回填后重新加载，确保内存配置与存储一致
-            didUpgrade = true; upgradeNotes = ju.notes || '';
-        }
+        var settled = settleUpgrade();
+        if (settled) { didUpgrade = true; upgradeNotes = settled.notes || ''; }
         var tm = themeMedia();
         if (tm) { if (tm.addEventListener) tm.addEventListener('change', onSystemThemeChange); else if (tm.addListener) tm.addListener(onSystemThemeChange); }
-        S.persistStorage(); checkVersion(); iosGuide();
+        /* 升级提示优先：升级期间不自动弹 iOS 引导，避免被其抢走或被覆盖 */
+        S.persistStorage(); checkVersion(); if (!didUpgrade) iosGuide();
         if (state.currentId && findIndexItem(state.currentId)) {
             var txt = Store.getText(K.ledger(state.currentId));
             if (txt != null) {
@@ -371,8 +374,12 @@
             }
         }
         render();
-        if (state.ledger && state.pending.length) setTimeout(ZH.chat.askPending, 400);
-        if (didUpgrade) setTimeout(function () { showUpgradeDone(upgradeNotes); }, 300);
+        if (state.ledger && state.pending.length) {
+            if (didUpgrade) pendingAfterUpgrade = true; // 升级提示优先，待其关闭后再询问
+            else setTimeout(ZH.chat.askPending, 400);
+        }
+        /* 同步立即显示升级提示：确保在任何兜底刷新发生前已渲染，避免提示被无标记的刷新吞掉 */
+        if (didUpgrade) showUpgradeDone(upgradeNotes);
 
         document.addEventListener('click', handleClick);
         document.addEventListener('input', function (e) {

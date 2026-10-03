@@ -33,17 +33,25 @@
   <nav id="nav"></nav>
 </div>
 <div id="modal-root"></div>
-<script src="js/version.js"></script>
-<script src="js/util.js"></script>
-<script src="js/store.js"></script>
-<script src="js/templates.js"></script>
-<script src="js/ledger.js"></script>
-<script src="js/category.js"></script>
-<script src="js/charts.js"></script>
-<script src="js/ai.js"></script>
-<script src="js/chat.js"></script>
-<script src="js/io.js"></script>
-<script src="js/views.js"></script>
-<script src="js/app.js"></script>
+<script>
+(function () {
+  var v = '';
+  try { v = new URLSearchParams(location.search).get('_v') || ''; } catch (e) { } // 尝试获取新版本
+  var q = v ? ('?_v=' + encodeURIComponent(v)) : ''; // 获取版本信息
+  var link = document.querySelector('link[href^="css/style.css"]');
+  if (link && q) link.setAttribute('href', 'css/style.css' + q);
+  var files = [
+    'js/version.js', 'js/util.js', 'js/store.js', 'js/templates.js', 'js/ledger.js',
+    'js/category.js', 'js/charts.js', 'js/ai.js', 'js/chat.js', 'js/io.js',
+    'js/views.js', 'js/app.js'
+  ];
+  for (var i = 0; i < files.length; i++) {
+    var s = document.createElement('script');
+    s.src = files[i] + q;
+    s.async = false;
+    document.body.appendChild(s);
+  }
+})();
+</script>
 </body>
 </html>

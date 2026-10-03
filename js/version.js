@@ -1,4 +1,4 @@
 /* 版本常量：与服务器 version.json 对比，用于更新提示 */
-window.APP_VERSION = '0.5.9';
+window.APP_VERSION = '0.6.1';
 /* 当前版本更新日志（展示在设置页「检查更新」区） */
-window.APP_NOTES = '修复统计页收支趋势折线图在桌面端全屏时被无限放大、文字过大的问题：图表改为固定字号并限制最大宽度。';
+window.APP_NOTES = '解决新版本升级时不弹出升级提示的bug';

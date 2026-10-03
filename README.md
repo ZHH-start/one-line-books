@@ -2,7 +2,7 @@
 
 不为"管钱"，只为"知道钱花哪了"。对话式记账，纯前端、零构建、数据纯本地。
 
-设计文档见 [`docu/main_design.md`](docu/main_design.md)，实现方案见 [`plans/implementation_plan.md`](plans/implementation_plan.md)。
+设计文档见 [`docu/main_design.md`](docu/main_design.md)；版本管理与发布见 [`docu/versioning.md`](docu/versioning.md)；踩坑记录见 [`docu/pitfalls.md`](docu/pitfalls.md)。
 
 ## 特性
 

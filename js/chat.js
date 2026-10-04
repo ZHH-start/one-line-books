@@ -1,4 +1,4 @@
-/* 记账对话流：气泡渲染、纠错、模糊拒绝、流式状态气泡、失败就地编辑重发、按账本隔离的 pending 缓冲 */
+/* 记账对话流：气泡渲染、纠错、模糊拒绝、流式状态气泡、消息删除、按账本隔离的 pending 缓冲 */
 (function (ZH) {
     'use strict';
     var U = ZH.util;
@@ -18,33 +18,16 @@
         return '<div class="bubble ai status" id="chatStatus"><span>' + label + '</span><span class="dots"><i></i><i></i><i></i></span></div>';
     }
 
-    function lastUserIndex() {
-        var arr = ZH.state.chat;
-        for (var i = arr.length - 1; i >= 0; i--) if (arr[i].role === 'user') return i;
-        return -1;
-    }
-
     function renderChatList() {
         var st = ZH.state, list = U.$('#chatList'); if (!list) return;
         if (!st.chat.length && !st.chatBusy) {
             list.innerHTML = '<div class="empty">试试输入：<br>「昨天打车 28」<br>「更正：是 260」</div>';
             return;
         }
-        var lastU = lastUserIndex(), h = '';
+        var h = '';
         st.chat.forEach(function (m, i) {
             if (m.role === 'user') {
-                if (m.editing) {
-                    h += '<div class="bubble user editing">' +
-                        '<textarea class="edit-area" id="editUserArea">' + U.esc(m.text) + '</textarea>' +
-                        '<div class="edit-actions">' +
-                        '<button class="btn" data-act="cancelEditUser" data-idx="' + i + '">取消</button>' +
-                        '<button class="btn primary" data-act="resendUser" data-idx="' + i + '">重新发送</button>' +
-                        '</div></div>';
-                } else {
-                    var editable = i === lastU;
-                    h += '<div class="bubble user' + (m.failed ? ' failed' : '') + '"' +
-                        (editable ? ' data-act="editUser" data-idx="' + i + '"' : '') + '>' + U.esc(m.text) + '</div>';
-                }
+                h += '<div class="bubble user' + (m.failed ? ' failed' : '') + '" data-act="userMsg" data-idx="' + i + '">' + U.esc(m.text) + '</div>';
             } else {
                 h += '<div class="bubble ai">' + U.esc(m.text);
                 if (m.records && m.records.length) {
@@ -163,11 +146,11 @@
                 st.pending.push({ ledgerId: st.currentId, text: text, time: U.nowPrefix() });
                 ZH.app.savePending();
             }
-            failAI(userIdx, why + '，点击上方消息可编辑重发。', true);
+            failAI(userIdx, why + '，可删除该消息后重新输入。', true);
         });
     }
 
-    /* 失败：标记末条用户消息可编辑重发，并追加 AI 提示 */
+    /* 失败：标记末条用户消息，并追加 AI 提示 */
     function failAI(userIdx, aiText, markFailed) {
         var st = ZH.state;
         if (markFailed && st.chat[userIdx]) st.chat[userIdx].failed = true;
@@ -182,32 +165,24 @@
         if (st.chatAbort) { try { st.chatAbort.__abortReason = 'user'; st.chatAbort.abort('user'); } catch (e) { } }
     }
 
-    /* 点击气泡就地编辑 */
-    function editUserMsg(el) {
+    // 点击用户消息：确认删除该消息及其之后的对话
+    function askDeleteUserMsg(el) {
         var st = ZH.state, i = parseInt(el.getAttribute('data-idx'), 10);
         if (!st.chat[i] || st.chat[i].role !== 'user') return;
-        st.chat.forEach(function (m) { if (m.editing) delete m.editing; });
-        st.chat[i].editing = true;
-        renderChatList(); scrollChat();
-        var a = U.$('#editUserArea');
-        if (a) { a.focus(); try { a.setSelectionRange(a.value.length, a.value.length); } catch (e) { } }
+        if (st.chatBusy) { U.toast('请先停止当前发送'); return; }
+        var html = '<h3>删除消息</h3><p class="sub">将删除这条消息及其之后的对话记录。已经记入账本的记录不会被连带删除，如需删除可发送“删除”或手动删除。</p>' +
+            '<div class="card" style="margin:8px 0">' + U.esc(st.chat[i].text) + '</div>' +
+            '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button>' +
+            '<button class="btn danger" data-act="doDeleteUserMsg" data-idx="' + i + '">删除</button></div>';
+        ZH.views.openModal(html);
     }
-    function cancelEditUserMsg(el) {
+    // 确认删除：截断到该消息之前
+    function doDeleteUserMsg(el) {
         var st = ZH.state, i = parseInt(el.getAttribute('data-idx'), 10);
-        if (st.chat[i]) { delete st.chat[i].editing; delete st.chat[i].failed; }
-        renderChatList();
-    }
-    function resendUserMsg(el) {
-        var st = ZH.state, i = parseInt(el.getAttribute('data-idx'), 10);
-        var area = U.$('#editUserArea');
-        var text = area ? (area.value || '').trim() : '';
-        if (!text) { U.toast('内容不能为空'); return; }
         if (!st.chat[i] || st.chat[i].role !== 'user') return;
-        st.chat[i] = { role: 'user', text: text };
-        st.chat = st.chat.slice(0, i + 1); // 丢弃其后的失败提示等
-        ZH.app.saveChat();
+        st.chat = st.chat.slice(0, i);
+        ZH.app.saveChat(); ZH.views.closeModal();
         renderChatList(); updateChatButton(); scrollChat();
-        startRequest(text, i);
     }
 
     /* ---------- 发送失败缓冲（每次打开询问是否处理） ---------- */
@@ -243,7 +218,7 @@
     ZH.chat = {
         chatListView: chatListView, renderChatList: renderChatList, mountChat: mountChat,
         handleSend: handleSend, stopRequest: stopRequest,
-        editUserMsg: editUserMsg, cancelEditUserMsg: cancelEditUserMsg, resendUserMsg: resendUserMsg,
+        askDeleteUserMsg: askDeleteUserMsg, doDeleteUserMsg: doDeleteUserMsg,
         askPending: askPending, resendPending: resendPending, discardPending: discardPending, scrollChat: scrollChat
     };
 })(window.ZH = window.ZH || {});

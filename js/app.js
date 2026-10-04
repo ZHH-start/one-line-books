@@ -268,9 +268,8 @@
         toggleUpdate: toggleUpdate,
         send: function () { ZH.chat.handleSend(); },
         chatSend: function () { if (state.chatBusy) ZH.chat.stopRequest(); else ZH.chat.handleSend(); },
-        editUser: function (el) { ZH.chat.editUserMsg(el); },
-        cancelEditUser: function (el) { ZH.chat.cancelEditUserMsg(el); },
-        resendUser: function (el) { ZH.chat.resendUserMsg(el); },
+        userMsg: function (el) { ZH.chat.askDeleteUserMsg(el); },
+        doDeleteUserMsg: function (el) { ZH.chat.doDeleteUserMsg(el); },
         setTheme: setTheme,
         statMode: function (el) { state.statMode = el.getAttribute('data-mode'); render(); },
         pendingResend: function () { ZH.chat.resendPending(); },
@@ -420,10 +419,6 @@
                 e.preventDefault();
                 if (state.chatBusy) return; // 进行中时 Enter 不发送
                 ZH.chat.handleSend();
-            } else if (e.target.id === 'editUserArea' && !e.shiftKey) {
-                e.preventDefault();
-                var btn = document.querySelector('#chatList [data-act="resendUser"]');
-                if (btn) ZH.chat.resendUserMsg(btn);
             }
         });
     }

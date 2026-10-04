@@ -190,6 +190,26 @@
         state.settings.model = U.$('#set_model').value.trim();
         saveSettings(); U.toast('已保存');
     }
+
+    // 清空所有缓存的二次确认弹窗
+    function confirmClearAll() {
+        V.openModal('<h3>清空所有缓存</h3>' +
+            '<p class="sub">将删除全部账本、对话记录、API 配置（含 Key）及所有本地设置，<b>且不可恢复</b>。建议先导出备份。</p>' +
+            '<p class="sub">确定要清空所有缓存吗？</p>' +
+            '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button>' +
+            '<button class="btn danger" data-act="doClearAll">确认清空</button></div>');
+    }
+
+    // 执行清空并回到无账本态
+    function doClearAll() {
+        abortActiveRequest(); // 中断进行中的 AI 请求
+        if (!S.clearAll()) { U.toast('清空失败，请重试'); return; }
+        state.index = []; state.currentId = null; state.ledger = null; // 重置内存状态
+        state.chat = []; state.pending = []; state.view = 'overview';
+        loadSettings(); applyTheme(); // 重新载入默认配置并应用主题
+        V.closeModal(); render();
+        U.toast('已清空所有缓存');
+    }
     /* 启动时自动更新开关：
        - 关闭 → 纯本地运行（不检查、不更新）。
        - 打开 → 先检查一次；若确有可升级版本，提醒先备份账单，刷新页面即更新。 */
@@ -243,6 +263,8 @@
         editChip: editChip,
         saveChatRecord: saveChatRecord,
         saveAIConfig: saveAIConfig,
+        clearAll: confirmClearAll,
+        doClearAll: doClearAll,
         toggleUpdate: toggleUpdate,
         send: function () { ZH.chat.handleSend(); },
         chatSend: function () { if (state.chatBusy) ZH.chat.stopRequest(); else ZH.chat.handleSend(); },

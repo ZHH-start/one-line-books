@@ -174,6 +174,11 @@
         h += '<div class="card"><b>用户分类规则</b>' +
             (st.ledger.header.userRules.length ? st.ledger.header.userRules.map(function (r) { return '<div class="sub">• ' + U.esc(r.rule) + ' → ' + U.esc(r.category) + '</div>'; }).join('') : '<div class="sub">暂无</div>') +
             '</div>';
+        // 缓存管理卡片：一键清空全部本地数据，点击二次确认
+        h += '<div class="card"><b>缓存管理</b>' +
+            '<div class="sub" style="margin-top:6px">清空将删除全部账本、对话记录、API 配置（含 Key）等本地数据，且不可恢复。建议先导出备份。</div>' +
+            '<div style="margin-top:12px"><button class="btn danger" data-act="clearAll">清空所有缓存</button></div>' +
+            '</div>';
         /* 设置最后一条：启动时自动更新开关 + 本版本更新内容。
            开关关闭 = 纯本地运行；打开时检查一次，若有更新则提示先备份、刷新即更新。 */
         h += '<div class="card"><b>更新</b>' +

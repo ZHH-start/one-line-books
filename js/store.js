@@ -25,5 +25,19 @@
     function persistStorage() {
         try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { }
     }
-    ZH.store = { K: K, Store: Store, persistStorage: persistStorage };
+
+    // 清除本应用全部本地数据，返回是否成功
+    function clearAll() {
+        var ok = true;
+        try {
+            var keys = [], i;
+            for (i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (k && k.indexOf('zh:') === 0) keys.push(k); // 只收集本应用的键，避免误删同域其他数据
+            }
+            for (i = 0; i < keys.length; i++) localStorage.removeItem(keys[i]);
+        } catch (e) { ok = false; }
+        return ok;
+    }
+    ZH.store = { K: K, Store: Store, persistStorage: persistStorage, clearAll: clearAll };
 })(window.ZH = window.ZH || {});

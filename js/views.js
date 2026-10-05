@@ -28,7 +28,7 @@
     }
 
     function renderNoLedger() {
-        U.$('#hdr').innerHTML = '<div class="h-left"></div><div class="h-mid">记账</div><div class="h-right"></div>';
+        U.$('#hdr').innerHTML = '<div class="h-left"></div><div class="h-mid">一句话账本</div><div class="h-right"></div>';
         U.$('#nav').innerHTML = '';
         U.$('#main').innerHTML =
             '<div class="empty"><div style="font-size:40px">📒</div><p>还没有账本</p></div>' +

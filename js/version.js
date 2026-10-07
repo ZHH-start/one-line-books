@@ -1,4 +1,4 @@
 /* 版本常量：与服务器 version.json 对比，用于更新提示 */
-window.APP_VERSION = '1.0.0';
+window.APP_VERSION = '1.0.2';
 /* 当前版本更新日志（展示在设置页「检查更新」区） */
 window.APP_NOTES = '「一句话账本」正式发布：ai对话式记账，纯前端、零构建、数据纯本地缓存，可导出。';

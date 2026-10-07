@@ -161,19 +161,19 @@
             [['system', '跟随系统'], ['light', '日间'], ['dark', '夜间']].map(function (t) {
                 return '<button class="btn' + ((s.theme || 'system') === t[0] ? ' on' : '') + '" data-act="setTheme" data-theme="' + t[0] + '">' + t[1] + '</button>';
             }).join('') + '</div></div>';
-        h += '<div class="card"><b>账本管理</b><div class="row" style="margin-top:10px;flex-wrap:wrap">' +
-            '<button class="btn" data-act="newLedger">新建账本</button>' +
+        h += '<div class="card"><b>分类设置</b><div class="row" style="margin-top:10px;flex-wrap:wrap">' +
             '<button class="btn" data-act="editCategories">编辑分类表</button>' +
             '<button class="btn" data-act="mergeCategory">合并分类</button>' +
             '<button class="btn" data-act="editUserRules">自定义分类规则</button>' +
-            '<button class="btn" data-act="importLedgerBtn">导入账本</button>' +
+            '</div>' +
+            '<div style="margin-top:10px"><b class="sub">当前规则</b></div>' +
+            (st.ledger.header.userRules.length ? st.ledger.header.userRules.map(function (r) { return '<div class="sub">• ' + U.esc(r.rule) + ' → ' + U.esc(r.category) + '</div>'; }).join('') : '<div class="sub">暂无</div>') +
+            '</div>';
+        h += '<div class="card"><b>数据与备份</b><div class="row" style="margin-top:10px;flex-wrap:wrap">' +
             '<button class="btn" data-act="exportFull">完整导出</button>' +
             '<button class="btn" data-act="openSplit">部分导出/拆分</button>' +
             '<button class="btn danger" data-act="deleteLedger" data-id="' + st.currentId + '">删除账本</button>' +
             '</div></div>';
-        h += '<div class="card"><b>用户分类规则</b>' +
-            (st.ledger.header.userRules.length ? st.ledger.header.userRules.map(function (r) { return '<div class="sub">• ' + U.esc(r.rule) + ' → ' + U.esc(r.category) + '</div>'; }).join('') : '<div class="sub">暂无</div>') +
-            '</div>';
         // 缓存管理卡片：一键清空全部本地数据，点击二次确认
         h += '<div class="card"><b>缓存管理</b>' +
             '<div class="sub" style="margin-top:6px">清空将删除全部账本、对话记录、API 配置（含 Key）等本地数据，且不可恢复。建议先导出备份。</div>' +
@@ -245,7 +245,12 @@
         var items = st.index.map(function (it) {
             return '<div class="rec" data-act="pickLedger" data-id="' + it.id + '"><div class="r-mid">' + U.esc(it.name) + (it.id === st.currentId ? ' <span class="sub">(当前)</span>' : '') + '</div></div>';
         }).join('');
-        openModal('<h3>切换账本</h3>' + (items || '<div class="sub">无</div>') +
+        openModal('<h3>切换账本</h3>' +
+            '<div class="ledger-toolbar">' +
+            '<button class="btn" data-act="newLedger">新建账本</button>' +
+            '<button class="btn" data-act="importLedgerBtn">导入账本</button>' +
+            '</div>' +
+            (items || '<div class="sub">无</div>') +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">关闭</button></div>');
     }
     function modalEditLedger() {
@@ -286,3 +291,4 @@
         modalSplit: modalSplit, modalSwitchLedger: modalSwitchLedger, modalEditRecord: modalEditRecord, modalRecordFromChat: modalRecordFromChat
     };
 })(window.ZH = window.ZH || {});
+

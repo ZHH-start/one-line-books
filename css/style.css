@@ -82,6 +82,10 @@ label.f{display:block;margin:10px 0 4px;font-size:13px;color:var(--sub)}
 .modal h3{margin:0 0 10px}
 .modal-actions{display:flex;gap:8px;margin-top:14px}
 .modal-actions .btn{flex:1}
+.ledger-toolbar{display:flex;gap:8px;margin-bottom:10px}
+.ledger-toolbar .btn{flex:1}
+.ledger-footer{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.ledger-footer .btn{flex:1}
 .toast{position:fixed;left:50%;bottom:calc(70px + var(--sb));transform:translateX(-50%);background:rgba(0,0,0,.82);color:#fff;padding:8px 14px;border-radius:20px;font-size:13px;z-index:80}
 .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .legend span{display:inline-flex;align-items:center;gap:5px;font-size:12px}

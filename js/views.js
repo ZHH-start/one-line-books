@@ -1,7 +1,7 @@
 /* 视图渲染：header / nav / 概览 / 记账 / 统计 / 明细 / 设置 / 弹层 */
 (function (ZH) {
     'use strict';
-    var U = ZH.util;
+    var U = ZH.util, S = ZH.store;
 
     function ico(n) {
         var p = {
@@ -161,24 +161,42 @@
             [['system', '跟随系统'], ['light', '日间'], ['dark', '夜间']].map(function (t) {
                 return '<button class="btn' + ((s.theme || 'system') === t[0] ? ' on' : '') + '" data-act="setTheme" data-theme="' + t[0] + '">' + t[1] + '</button>';
             }).join('') + '</div></div>';
-        h += '<div class="card"><b>账本管理</b><div class="row" style="margin-top:10px;flex-wrap:wrap">' +
-            '<button class="btn" data-act="newLedger">新建账本</button>' +
+        h += '<div class="card"><b>分类设置</b><div class="row" style="margin-top:10px;flex-wrap:wrap">' +
             '<button class="btn" data-act="editCategories">编辑分类表</button>' +
             '<button class="btn" data-act="mergeCategory">合并分类</button>' +
             '<button class="btn" data-act="editUserRules">自定义分类规则</button>' +
-            '<button class="btn" data-act="importLedgerBtn">导入账本</button>' +
+            '</div>' +
+            '<div style="margin-top:10px"><b class="sub">当前规则</b></div>' +
+            (st.ledger.header.userRules.length ? st.ledger.header.userRules.map(function (r) { return '<div class="sub">• ' + U.esc(r.rule) + ' → ' + U.esc(r.category) + '</div>'; }).join('') : '<div class="sub">暂无</div>') +
+            '</div>';
+        h += '<div class="card"><b>数据与备份</b><div class="row" style="margin-top:10px;flex-wrap:wrap">' +
             '<button class="btn" data-act="exportFull">完整导出</button>' +
             '<button class="btn" data-act="openSplit">部分导出/拆分</button>' +
             '<button class="btn danger" data-act="deleteLedger" data-id="' + st.currentId + '">删除账本</button>' +
             '</div></div>';
-        h += '<div class="card"><b>用户分类规则</b>' +
-            (st.ledger.header.userRules.length ? st.ledger.header.userRules.map(function (r) { return '<div class="sub">• ' + U.esc(r.rule) + ' → ' + U.esc(r.category) + '</div>'; }).join('') : '<div class="sub">暂无</div>') +
+        // 缓存管理卡片：用量展示 + 阈值配置 + 一键清空
+        h += '<div class="card"><b>缓存管理</b>';
+        var u = ZH.app.storageUsage();
+        var pct = Math.max(0, Math.min(100, u.pct));
+        var barColor = pct >= (s.storageWarnPct || 80) ? 'var(--danger)' : 'var(--accent)'; // 超阈值进度条转红
+        h += '<div class="between" style="margin-top:8px"><span class="sub">已用 / 可用</span>' +
+            '<span class="sub">' + U.esc(S.fmtUnits(u.m.total)) + ' / ' + U.esc(S.fmtUnits(u.cap)) + '（' + pct.toFixed(1) + '%）</span></div>';
+        h += '<div class="progress" style="margin-top:6px"><i style="width:' + pct + '%;background:' + barColor + '"></i></div>';
+        // 四类分项：账本正文 / 对话记录 / 核心配置 / 其它
+        var g = u.m.groups;
+        var rows = [['账本正文', g.ledger], ['对话记录', g.chat], ['核心配置', g.config], ['其它', g.other]];
+        h += '<div style="margin-top:10px">' + rows.map(function (r) {
+            var pr = u.cap > 0 ? (r[1] / u.cap) * 100 : 0;
+            return '<div class="between" style="margin-top:4px"><span class="sub">' + r[0] + '</span>' +
+                '<span class="sub">' + U.esc(S.fmtUnits(r[1])) + '（' + pr.toFixed(1) + '%）</span></div>';
+        }).join('') + '</div>';
+        h += '<div class="sub" style="margin-top:8px">告警阈值：' + (s.storageWarnPct || 80) + '%，达到后各页面顶部显示提醒。</div>';
+        h += '<div class="row" style="margin-top:12px;flex-wrap:wrap">' +
+            '<button class="btn" data-act="editStorageCfg">容量与阈值设置</button>' +
+            '<button class="btn danger" data-act="clearAll">清空所有缓存</button>' +
             '</div>';
-        // 缓存管理卡片：一键清空全部本地数据，点击二次确认
-        h += '<div class="card"><b>缓存管理</b>' +
-            '<div class="sub" style="margin-top:6px">清空将删除全部账本、对话记录、API 配置（含 Key）等本地数据，且不可恢复。建议先导出备份。</div>' +
-            '<div style="margin-top:12px"><button class="btn danger" data-act="clearAll">清空所有缓存</button></div>' +
-            '</div>';
+        h += '<div class="sub" style="margin-top:8px">清空将删除全部账本、对话记录、API 配置（含 Key）等本地数据，且不可恢复。建议先导出备份。</div>';
+        h += '</div>';
         /* 设置最后一条：启动时自动更新开关 + 本版本更新内容。
            开关关闭 = 纯本地运行；打开时检查一次，若有更新则提示先备份、刷新即更新。 */
         h += '<div class="card"><b>更新</b>' +
@@ -233,6 +251,15 @@
             '<textarea id="ur_text" placeholder="打气筒 - 购物">' + U.esc(txt) + '</textarea>' +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="saveUserRules">保存</button></div>');
     }
+    function modalStorageCfg() {
+        var s = ZH.state.settings;
+        var capMb = ((s.storageCapUnits || S.DEFAULT_CAP_UNITS) * 2 / 1024 / 1024).toFixed(0); // 单元数换算回 MB
+        openModal('<h3>容量与阈值设置</h3>' +
+            '<p class="sub">浏览器不提供 localStorage 精确上限，此处为假定容量，用于估算占用比例。</p>' +
+            '<label class="f">假定容量上限（MB）</label><input id="sc_cap" type="number" inputmode="decimal" value="' + U.esc(capMb) + '">' +
+            '<label class="f">告警阈值（%）</label><input id="sc_warn" type="number" inputmode="numeric" value="' + U.esc(s.storageWarnPct || 80) + '">' +
+            '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="saveStorageCfg">保存</button></div>');
+    }
     function modalSplit() {
         openModal('<h3>部分导出 / 拆分</h3><p class="sub">选中时间范围内的记录将从本账本移出。</p>' +
             '<label class="f">开始日期</label><input id="sp_from" type="date">' +
@@ -245,7 +272,12 @@
         var items = st.index.map(function (it) {
             return '<div class="rec" data-act="pickLedger" data-id="' + it.id + '"><div class="r-mid">' + U.esc(it.name) + (it.id === st.currentId ? ' <span class="sub">(当前)</span>' : '') + '</div></div>';
         }).join('');
-        openModal('<h3>切换账本</h3>' + (items || '<div class="sub">无</div>') +
+        openModal('<h3>切换账本</h3>' +
+            '<div class="ledger-toolbar">' +
+            '<button class="btn" data-act="newLedger">新建账本</button>' +
+            '<button class="btn" data-act="importLedgerBtn">导入账本</button>' +
+            '</div>' +
+            (items || '<div class="sub">无</div>') +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">关闭</button></div>');
     }
     function modalEditLedger() {
@@ -282,7 +314,8 @@
         viewOverview: viewOverview, viewStats: viewStats, viewDetail: viewDetail, viewSettings: viewSettings,
         openModal: openModal, closeModal: closeModal, modalNewLedger: modalNewLedger, modalEditGoal: modalEditGoal,
         modalEditCategories: modalEditCategories, modalMergeCategory: modalMergeCategory, modalEditUserRules: modalEditUserRules,
-        modalEditLedger: modalEditLedger,
+        modalEditLedger: modalEditLedger, modalStorageCfg: modalStorageCfg,
         modalSplit: modalSplit, modalSwitchLedger: modalSwitchLedger, modalEditRecord: modalEditRecord, modalRecordFromChat: modalRecordFromChat
     };
 })(window.ZH = window.ZH || {});
+

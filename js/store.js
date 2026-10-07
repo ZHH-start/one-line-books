@@ -1,4 +1,4 @@
-/* localStorage 封装、键命名、持久化请求 */
+/* localStorage 封装、键命名、持久化请求、容量统计 */
 (function (ZH) {
     'use strict';
     var K = {
@@ -15,12 +15,56 @@
            { phase: 'done', version, notes }     —— 当前页面即为 version */
         upgrade: 'zh:upgrade'
     };
+
+    // 假定容量上限（UTF-16 单元数），默认 1MB（约 1 万条记录）；实测 4 万条时 App 已卡死
+    var DEFAULT_CAP_UNITS = 1024 * 1024 / 2; // 1MB / 2 = 524,288 单元
+    var measureCache = null, measureAt = 0; // 测量结果缓存，避免每次渲染全量读键
+
+    // 统计全部 zh:* 键占用（UTF-16 单元数），按账本正文/对话记录/核心配置/其它归类
+    function measure() {
+        if (measureCache && Date.now() - measureAt < 1500) return measureCache;
+        var groups = { ledger: 0, chat: 0, config: 0, other: 0 };
+        var total = 0, count = 0;
+        try {
+            for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (!k || k.indexOf('zh:') !== 0) continue;
+                var v = localStorage.getItem(k) || '';
+                var units = k.length + v.length;
+                total += units; count++;
+                if (k.indexOf('zh:ledger:') === 0) groups.ledger += units;
+                else if (k.indexOf('zh:chat:') === 0) groups.chat += units;
+                else if (k === K.settings) groups.config += units;
+                else groups.other += units;
+            }
+        } catch (e) { }
+        measureCache = { total: total, count: count, groups: groups };
+        measureAt = Date.now();
+        return measureCache;
+    }
+
+    // 将 UTF-16 单元数格式化为可读字节串（每单元 2 字节）
+    function fmtUnits(units) {
+        var bytes = units * 2;
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+    }
+
+    // 写入失败提示：区分配额超限与其他错误
+    function quotaMsg(e) {
+        if (e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014)) {
+            return '存储空间已满：请导出账本并清理对话记录';
+        }
+        return '存储失败';
+    }
+
     var Store = {
         get: function (k, def) { try { var v = localStorage.getItem(k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } },
-        set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { ZH.util.toast('存储失败：缓冲空间满'); return false; } },
-        del: function (k) { try { localStorage.removeItem(k); } catch (e) { } },
+        set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); measureCache = null; return true; } catch (e) { ZH.util.toast(quotaMsg(e)); return false; } },
+        del: function (k) { try { localStorage.removeItem(k); measureCache = null; } catch (e) { } },
         getText: function (k) { return localStorage.getItem(k); },
-        setText: function (k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { ZH.util.toast('存储失败'); return false; } }
+        setText: function (k, v) { try { localStorage.setItem(k, v); measureCache = null; return true; } catch (e) { ZH.util.toast(quotaMsg(e)); return false; } }
     };
     function persistStorage() {
         try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { }
@@ -37,7 +81,8 @@
             }
             for (i = 0; i < keys.length; i++) localStorage.removeItem(keys[i]);
         } catch (e) { ok = false; }
+        measureCache = null;
         return ok;
     }
-    ZH.store = { K: K, Store: Store, persistStorage: persistStorage, clearAll: clearAll };
+    ZH.store = { K: K, Store: Store, persistStorage: persistStorage, clearAll: clearAll, measure: measure, fmtUnits: fmtUnits, DEFAULT_CAP_UNITS: DEFAULT_CAP_UNITS };
 })(window.ZH = window.ZH || {});

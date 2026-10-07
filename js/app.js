@@ -16,6 +16,31 @@
     function loadSettings() {
         state.settings = Store.get(K.settings, { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-chat', checkUpdate: true, theme: 'system' });
         if (!state.settings.theme) state.settings.theme = 'system';
+        if (!state.settings.storageCapUnits) state.settings.storageCapUnits = S.DEFAULT_CAP_UNITS; // 假定容量上限，默认 1MB
+        if (!state.settings.storageWarnPct) state.settings.storageWarnPct = 80; // 告警阈值百分比
+    }
+
+    // 汇总缓存用量：返回测量结果、假定上限与占用百分比
+    function storageUsage() {
+        var m = S.measure();
+        var cap = state.settings.storageCapUnits || S.DEFAULT_CAP_UNITS;
+        var pct = cap > 0 ? (m.total / cap) * 100 : 0;
+        return { m: m, cap: cap, pct: pct };
+    }
+
+    // 渲染全局告警条：占用达阈值时在标题栏下方显示提醒，所有视图可见
+    function renderWarnBar() {
+        var bar = U.$('#warnbar'); if (!bar) return;
+        var u = storageUsage();
+        var warnPct = state.settings.storageWarnPct || 80;
+        if (u.pct >= warnPct) {
+            bar.innerHTML = '<div class="warnbar-inner">⚠️ 缓存即将用尽（已用 ' + u.pct.toFixed(0) + '%），' +
+                '建议<a href="javascript:void(0)" data-act="exportFull">导出账本</a>并清理对话记录</div>';
+            bar.classList.remove('hidden');
+        } else {
+            bar.innerHTML = '';
+            bar.classList.add('hidden');
+        }
     }
     function saveSettings() { Store.set(K.settings, state.settings); }
     function sortIndex() { state.index.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); }); }
@@ -190,6 +215,15 @@
         state.settings.model = U.$('#set_model').value.trim();
         saveSettings(); U.toast('已保存');
     }
+    // 保存缓存假定上限（MB）与告警阈值（%）
+    function saveStorageCfg() {
+        var mb = parseFloat(U.$('#sc_cap').value); // 假定容量上限，单位 MB
+        var pct = parseFloat(U.$('#sc_warn').value); // 告警阈值百分比
+        if (!isNaN(mb) && mb > 0) state.settings.storageCapUnits = Math.round(mb * 1024 * 1024 / 2);
+        if (!isNaN(pct) && pct > 0 && pct <= 100) state.settings.storageWarnPct = pct;
+        saveSettings(); V.closeModal(); render();
+        U.toast('已保存');
+    }
 
     // 清空所有缓存的二次确认弹窗
     function confirmClearAll() {
@@ -265,6 +299,8 @@
         saveAIConfig: saveAIConfig,
         clearAll: confirmClearAll,
         doClearAll: doClearAll,
+        editStorageCfg: function () { V.modalStorageCfg(); },
+        saveStorageCfg: saveStorageCfg,
         toggleUpdate: toggleUpdate,
         send: function () { ZH.chat.handleSend(); },
         chatSend: function () { if (state.chatBusy) ZH.chat.stopRequest(); else ZH.chat.handleSend(); },
@@ -425,9 +461,10 @@
 
     ZH.app = {
         render: render, openLedger: openLedger, saveLedger: saveLedger, saveChat: saveChat, savePending: savePending,
-        saveIndex: saveIndex, createLedger: createLedger, deleteLedger: deleteLedger
+        saveIndex: saveIndex, createLedger: createLedger, deleteLedger: deleteLedger,
+        storageUsage: storageUsage, renderWarnBar: renderWarnBar
     };
-    function render() { V.render(); }
+    function render() { V.render(); renderWarnBar(); }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
     else boot();

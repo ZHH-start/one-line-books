@@ -64,6 +64,7 @@
     }
 
     function importLedger(file) {
+        if (!ZH.app.guardWrite()) return; // 总量已满时不允许导入
         var reader = new FileReader();
         reader.onload = function () {
             var st = ZH.state;

@@ -16,14 +16,16 @@
         upgrade: 'zh:upgrade'
     };
 
-    // 假定容量上限（UTF-16 单元数），默认 1MB（约 1 万条记录）；实测 4 万条时 App 已卡死
-    var DEFAULT_CAP_UNITS = 1024 * 1024 / 2; // 1MB / 2 = 524,288 单元
+    // 假定容量上限（UTF-16 单元数）：总量 默认4MB，单账本正文 默认800K
+    var DEFAULT_CAP_UNITS = 4 * 1024 * 1024 / 2; // 4MB / 2 = 2,097,152 单元
+    var DEFAULT_LEDGER_CAP_UNITS = 800 * 1024 / 2; // 800K / 2 = 409,600 单元
     var measureCache = null, measureAt = 0; // 测量结果缓存，避免每次渲染全量读键
 
-    // 统计全部 zh:* 键占用（UTF-16 单元数），按账本正文/对话记录/核心配置/其它归类
+    // 统计全部 zh:* 键占用（UTF-16 单元数），按账本正文/对话记录/核心配置/其它归类，并给出逐账本正文大小
     function measure() {
         if (measureCache && Date.now() - measureAt < 1500) return measureCache;
         var groups = { ledger: 0, chat: 0, config: 0, other: 0 };
+        var ledgerSizes = {}; // 账本 id -> 正文占用单元数
         var total = 0, count = 0;
         try {
             for (var i = 0; i < localStorage.length; i++) {
@@ -32,13 +34,16 @@
                 var v = localStorage.getItem(k) || '';
                 var units = k.length + v.length;
                 total += units; count++;
-                if (k.indexOf('zh:ledger:') === 0) groups.ledger += units;
+                if (k.indexOf('zh:ledger:') === 0) {
+                    groups.ledger += units;
+                    ledgerSizes[k.slice('zh:ledger:'.length)] = units;
+                }
                 else if (k.indexOf('zh:chat:') === 0) groups.chat += units;
                 else if (k === K.settings) groups.config += units;
                 else groups.other += units;
             }
         } catch (e) { }
-        measureCache = { total: total, count: count, groups: groups };
+        measureCache = { total: total, count: count, groups: groups, ledgerSizes: ledgerSizes };
         measureAt = Date.now();
         return measureCache;
     }
@@ -84,5 +89,5 @@
         measureCache = null;
         return ok;
     }
-    ZH.store = { K: K, Store: Store, persistStorage: persistStorage, clearAll: clearAll, measure: measure, fmtUnits: fmtUnits, DEFAULT_CAP_UNITS: DEFAULT_CAP_UNITS };
+    ZH.store = { K: K, Store: Store, persistStorage: persistStorage, clearAll: clearAll, measure: measure, fmtUnits: fmtUnits, DEFAULT_CAP_UNITS: DEFAULT_CAP_UNITS, DEFAULT_LEDGER_CAP_UNITS: DEFAULT_LEDGER_CAP_UNITS };
 })(window.ZH = window.ZH || {});

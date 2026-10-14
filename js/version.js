@@ -1,4 +1,4 @@
 /* 版本常量：与服务器 version.json 对比，用于更新提示 */
-window.APP_VERSION = '1.1.0';
+window.APP_VERSION = '1.1.1';
 /* 当前版本更新日志（展示在设置页「检查更新」区） */
-window.APP_NOTES = '优化UI：设置中的导入账本和新建账本移入概览，账本管理细化为更合理的分类。添加功能：缓存管理以及对应提示';
+window.APP_NOTES = '导出账本时默认名后添加时间后缀';

@@ -16,31 +16,55 @@
     function loadSettings() {
         state.settings = Store.get(K.settings, { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-chat', checkUpdate: true, theme: 'system' });
         if (!state.settings.theme) state.settings.theme = 'system';
-        if (!state.settings.storageCapUnits) state.settings.storageCapUnits = S.DEFAULT_CAP_UNITS; // 假定容量上限，默认 1MB
-        if (!state.settings.storageWarnPct) state.settings.storageWarnPct = 80; // 告警阈值百分比
+        if (!state.settings.storageCapUnits) state.settings.storageCapUnits = S.DEFAULT_CAP_UNITS; // 总量上限，默认 4MB
+        if (!state.settings.ledgerCapUnits) state.settings.ledgerCapUnits = S.DEFAULT_LEDGER_CAP_UNITS; // 单账本名义上限，默认 800K
+        if (state.settings.storageWarnPct == null) state.settings.storageWarnPct = 80; // 告警阈值百分比（0 或 100 表示关闭）
     }
 
-    // 汇总缓存用量：返回测量结果、假定上限与占用百分比
+    // 汇总缓存用量：总量占用与当前账本实际可增长上限
     function storageUsage() {
         var m = S.measure();
-        var cap = state.settings.storageCapUnits || S.DEFAULT_CAP_UNITS;
-        var pct = cap > 0 ? (m.total / cap) * 100 : 0;
-        return { m: m, cap: cap, pct: pct };
+        var totalCap = state.settings.storageCapUnits || S.DEFAULT_CAP_UNITS; // 总量上限
+        var ledgerCap = state.settings.ledgerCapUnits || S.DEFAULT_LEDGER_CAP_UNITS; // 单账本告警阈值，超此值提示
+        var ledgerUsed = state.currentId ? (m.ledgerSizes[state.currentId] || 0) : 0; // 当前账本正文占用
+        // 当前账本实际可增长上限：受总量剩余约束，取「阈值」与「已用+总量剩余」较小者
+        var ledgerEffCap = Math.min(ledgerCap, ledgerUsed + (totalCap - m.total));
+        if (ledgerEffCap < 1) ledgerEffCap = Math.max(ledgerUsed, 1); // 避免除零
+        var totalPct = totalCap > 0 ? (m.total / totalCap) * 100 : 0;
+        var ledgerPct = (ledgerUsed / ledgerEffCap) * 100;
+        // 告警阈值：0 或 100 均视为关闭；仅 1-99 生效
+        var warnPct = state.settings.storageWarnPct;
+        if (warnPct == null) warnPct = 80;
+        var warnActive = warnPct > 0 && warnPct < 100;
+        return {
+            m: m, totalCap: totalCap, totalPct: totalPct,
+            ledgerCap: ledgerCap, ledgerEffCap: ledgerEffCap, ledgerUsed: ledgerUsed, ledgerPct: ledgerPct,
+            warnPct: warnPct, warnActive: warnActive
+        };
     }
 
-    // 渲染全局告警条：占用达阈值时在标题栏下方显示提醒，所有视图可见
+    // 总量是否已达硬上限（>=4MB）：达到则阻断一切增长性写入
+    function overQuota() { return storageUsage().totalPct >= 100; }
+
+    // 写入闸门：允许写入返回 true，超总量硬上限返回 false 并提示
+    function guardWrite() {
+        if (overQuota()) { U.toast('总缓存已满，已暂停写入，请导出/拆分/清理后继续'); return false; }
+        return true;
+    }
+
+    // 渲染全局告警条：总量与当前账本双条件，红黄两级，所有视图可见
     function renderWarnBar() {
         var bar = U.$('#warnbar'); if (!bar) return;
         var u = storageUsage();
-        var warnPct = state.settings.storageWarnPct || 80;
-        if (u.pct >= warnPct) {
-            bar.innerHTML = '<div class="warnbar-inner">⚠️ 缓存即将用尽（已用 ' + u.pct.toFixed(0) + '%），' +
-                '建议<a href="javascript:void(0)" data-act="exportFull">导出账本</a>并清理对话记录</div>';
-            bar.classList.remove('hidden');
-        } else {
-            bar.innerHTML = '';
-            bar.classList.add('hidden');
-        }
+        var lines = [];
+        var exp = '<a href="javascript:void(0)" data-act="exportFull">导出账本</a>';
+        var split = '<a href="javascript:void(0)" data-act="openSplit">拆分导出</a>';
+        if (u.totalPct >= 100) lines.push(['danger', '⚠️ 总缓存已满，已暂停写入，请' + exp + '或清理对话记录后继续']);
+        else if (u.warnActive && u.totalPct >= u.warnPct) lines.push(['warn', '⚠️ 总缓存已用 ' + u.totalPct.toFixed(0) + '%，建议' + exp + '并清理对话记录']);
+        if (u.ledgerUsed > 0 && u.ledgerUsed >= u.ledgerEffCap) lines.push(['danger', '⚠️ 当前账本已超过允许使用容量，请' + split]);
+        if (!lines.length) { bar.innerHTML = ''; bar.classList.add('hidden'); return; }
+        bar.innerHTML = lines.map(function (l) { return '<div class="warnbar-inner ' + l[0] + '">' + l[1] + '</div>'; }).join('');
+        bar.classList.remove('hidden');
     }
     function saveSettings() { Store.set(K.settings, state.settings); }
     function sortIndex() { state.index.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); }); }
@@ -72,13 +96,21 @@
         if (state.pending.length) setTimeout(ZH.chat.askPending, 300);
     }
     function saveLedger() {
-        if (!state.ledger || !state.currentId) return;
-        Store.setText(K.ledger(state.currentId), L.serialize(state.ledger.header, state.ledger.records));
+        if (!state.ledger || !state.currentId) return false;
+        var text = L.serialize(state.ledger.header, state.ledger.records);
+        var old = Store.getText(K.ledger(state.currentId));
+        // 总量已达硬上限时阻断增长性写入；删除/缩减（更短）放行以便自救
+        if (overQuota() && old != null && text.length >= old.length) {
+            U.toast('总缓存已满，已暂停写入，请导出/拆分/清理后继续');
+            return false;
+        }
+        Store.setText(K.ledger(state.currentId), text);
         var it = findIndexItem(state.currentId);
         if (it) { it.updatedAt = Date.now(); saveIndex(); }
+        return true;
     }
-    function saveChat() { if (state.currentId) Store.set(K.chat(state.currentId), state.chat); }
-    function savePending() { if (state.currentId) Store.set(K.pending(state.currentId), state.pending); }
+    function saveChat() { if (state.currentId && guardWrite()) Store.set(K.chat(state.currentId), state.chat); }
+    function savePending() { if (state.currentId && guardWrite()) Store.set(K.pending(state.currentId), state.pending); }
 
     function showValidationErrors(parsed) {
         var html = '<h3>账本损坏。</h3><p class="sub">以下记录引用了账本头未声明的分类，请修正后使用。</p>';
@@ -91,6 +123,7 @@
     function createLedger(name, templateKey) {
         name = (name || '').trim();
         if (!name) { U.toast('请输入账本名'); return; }
+        if (!guardWrite()) return; // 总量已满时不允许新建
         if (state.index.some(function (x) { return x.name === name; })) { U.toast('已存在同名账本'); return; }
         var tpl = ZH.templates.TEMPLATES[templateKey] || ZH.templates.TEMPLATES['生活'];
         var header = {
@@ -215,12 +248,22 @@
         state.settings.model = U.$('#set_model').value.trim();
         saveSettings(); U.toast('已保存');
     }
-    // 保存缓存假定上限（MB）与告警阈值（%）
+    // 是否为整数
+    function isInt(n) { return typeof n === 'number' && isFinite(n) && Math.floor(n) === n; }
+
+    // 保存缓存总量上限（MB）、单账本上限（KB）与告警阈值（%）
+    // 约束：三项均为整数；总量 1-4MB；单账本 <= 总量；告警阈值 0-100（0 或 100 视为关闭）
     function saveStorageCfg() {
-        var mb = parseFloat(U.$('#sc_cap').value); // 假定容量上限，单位 MB
+        var mb = parseFloat(U.$('#sc_cap').value); // 总量上限，单位 MB
+        var kb = parseFloat(U.$('#sc_ledger').value); // 单账本上限，单位 KB
         var pct = parseFloat(U.$('#sc_warn').value); // 告警阈值百分比
-        if (!isNaN(mb) && mb > 0) state.settings.storageCapUnits = Math.round(mb * 1024 * 1024 / 2);
-        if (!isNaN(pct) && pct > 0 && pct <= 100) state.settings.storageWarnPct = pct;
+        if (isNaN(mb) || !isInt(mb) || mb < 1 || mb > 4) { U.toast('总量上限须为 1-4 的整数（MB）'); return; }
+        if (isNaN(kb) || !isInt(kb) || kb < 1) { U.toast('单账本上限须为不小于 1 的整数（KB）'); return; }
+        if (kb > mb * 1024) { U.toast('单账本上限不得大于总量上限'); return; }
+        if (isNaN(pct) || !isInt(pct) || pct < 0 || pct > 100) { U.toast('告警阈值须为 0-100 的整数'); return; }
+        state.settings.storageCapUnits = Math.round(mb * 1024 * 1024 / 2);
+        state.settings.ledgerCapUnits = Math.round(kb * 1024 / 2);
+        state.settings.storageWarnPct = pct; // 0 或 100 表示关闭告警
         saveSettings(); V.closeModal(); render();
         U.toast('已保存');
     }
@@ -462,7 +505,7 @@
     ZH.app = {
         render: render, openLedger: openLedger, saveLedger: saveLedger, saveChat: saveChat, savePending: savePending,
         saveIndex: saveIndex, createLedger: createLedger, deleteLedger: deleteLedger,
-        storageUsage: storageUsage, renderWarnBar: renderWarnBar
+        storageUsage: storageUsage, renderWarnBar: renderWarnBar, guardWrite: guardWrite, overQuota: overQuota
     };
     function render() { V.render(); renderWarnBar(); }
 

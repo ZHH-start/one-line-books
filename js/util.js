@@ -21,11 +21,16 @@
         var d = new Date();
         return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
     }
+    // 文件名时间戳：YYYYMMDD_HHMMSS
+    function fileStamp() {
+        var d = new Date();
+        return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
+    }
     function toast(msg) {
         var el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
         document.body.appendChild(el); setTimeout(function () { el.remove(); }, 2200);
     }
     function colorAt(i) { return COLORS[i % COLORS.length]; }
 
-    ZH.util = { $: $, uuid: uuid, esc: esc, fmt: fmt, todayStr: todayStr, nowPrefix: nowPrefix, toast: toast, colorAt: colorAt };
+    ZH.util = { $: $, uuid: uuid, esc: esc, fmt: fmt, todayStr: todayStr, nowPrefix: nowPrefix, fileStamp: fileStamp, toast: toast, colorAt: colorAt };
 })(window.ZH = window.ZH || {});

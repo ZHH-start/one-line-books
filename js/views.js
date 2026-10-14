@@ -174,23 +174,38 @@
             '<button class="btn" data-act="openSplit">部分导出/拆分</button>' +
             '<button class="btn danger" data-act="deleteLedger" data-id="' + st.currentId + '">删除账本</button>' +
             '</div></div>';
-        // 缓存管理卡片：用量展示 + 阈值配置 + 一键清空
+        // 缓存管理卡片：总量 + 当前账本可用空间 + 其余账本 + 对话记录 + 配置与其它
         h += '<div class="card"><b>缓存管理</b>';
         var u = ZH.app.storageUsage();
-        var pct = Math.max(0, Math.min(100, u.pct));
-        var barColor = pct >= (s.storageWarnPct || 80) ? 'var(--danger)' : 'var(--accent)'; // 超阈值进度条转红
-        h += '<div class="between" style="margin-top:8px"><span class="sub">已用 / 可用</span>' +
-            '<span class="sub">' + U.esc(S.fmtUnits(u.m.total)) + ' / ' + U.esc(S.fmtUnits(u.cap)) + '（' + pct.toFixed(1) + '%）</span></div>';
-        h += '<div class="progress" style="margin-top:6px"><i style="width:' + pct + '%;background:' + barColor + '"></i></div>';
-        // 四类分项：账本正文 / 对话记录 / 核心配置 / 其它
-        var g = u.m.groups;
-        var rows = [['账本正文', g.ledger], ['对话记录', g.chat], ['核心配置', g.config], ['其它', g.other]];
-        h += '<div style="margin-top:10px">' + rows.map(function (r) {
-            var pr = u.cap > 0 ? (r[1] / u.cap) * 100 : 0;
-            return '<div class="between" style="margin-top:4px"><span class="sub">' + r[0] + '</span>' +
-                '<span class="sub">' + U.esc(S.fmtUnits(r[1])) + '（' + pr.toFixed(1) + '%）</span></div>';
-        }).join('') + '</div>';
-        h += '<div class="sub" style="margin-top:8px">告警阈值：' + (s.storageWarnPct || 80) + '%，达到后各页面顶部显示提醒。</div>';
+        var totalPct = Math.max(0, Math.min(100, u.totalPct));
+        var totalColor = (u.warnActive && u.totalPct >= u.warnPct) ? 'var(--danger)' : 'var(--accent)';
+        // 总量行：已用 / 上限 及百分比
+        h += '<div class="between" style="margin-top:8px"><span class="sub">总量</span>' +
+            '<span class="sub">' + U.esc(S.fmtUnits(u.m.total)) + ' / ' + U.esc(S.fmtUnits(u.totalCap)) + '（' + u.totalPct.toFixed(1) + '%）</span></div>';
+        h += '<div class="progress" style="margin-top:6px"><i style="width:' + totalPct + '%;background:' + totalColor + '"></i></div>';
+        // 当前账本行：分母为实际允许使用容量（总量充足时即阈值，不足时被压缩），超用时转红
+        if (u.ledgerUsed > 0) {
+            var lp = Math.max(0, Math.min(100, u.ledgerPct));
+            var lColor = u.ledgerUsed >= u.ledgerEffCap ? 'var(--danger)' : 'var(--accent)';
+            h += '<div class="between" style="margin-top:10px"><span class="sub">当前账本</span>' +
+                '<span class="sub">' + U.esc(S.fmtUnits(u.ledgerUsed)) + ' / ' + U.esc(S.fmtUnits(u.ledgerEffCap)) + '（' + u.ledgerPct.toFixed(1) + '%）</span></div>';
+            h += '<div class="progress" style="margin-top:6px"><i style="width:' + lp + '%;background:' + lColor + '"></i></div>';
+        }
+        // 其余账本行：大小 / 总量上限（比率）
+        var otherLedgers = u.m.groups.ledger - u.ledgerUsed;
+        var otherPct = u.totalCap > 0 ? (otherLedgers / u.totalCap) * 100 : 0;
+        h += '<div class="between" style="margin-top:6px"><span class="sub">其余账本</span>' +
+            '<span class="sub">' + U.esc(S.fmtUnits(otherLedgers)) + ' / ' + U.esc(S.fmtUnits(u.totalCap)) + '（' + otherPct.toFixed(1) + '%）</span></div>';
+        // 对话记录行：大小 / 总量上限（比率）
+        var chatPct = u.totalCap > 0 ? (u.m.groups.chat / u.totalCap) * 100 : 0;
+        h += '<div class="between" style="margin-top:6px"><span class="sub">对话记录</span>' +
+            '<span class="sub">' + U.esc(S.fmtUnits(u.m.groups.chat)) + ' / ' + U.esc(S.fmtUnits(u.totalCap)) + '（' + chatPct.toFixed(1) + '%）</span></div>';
+        // 配置与其它行：大小 / 总量上限（比率）
+        var cfgOther = u.m.groups.config + u.m.groups.other;
+        var cfgPct = u.totalCap > 0 ? (cfgOther / u.totalCap) * 100 : 0;
+        h += '<div class="between" style="margin-top:6px"><span class="sub">配置与其它</span>' +
+            '<span class="sub">' + U.esc(S.fmtUnits(cfgOther)) + ' / ' + U.esc(S.fmtUnits(u.totalCap)) + '（' + cfgPct.toFixed(1) + '%）</span></div>';
+        h += '<div class="sub" style="margin-top:8px">总量上限 ' + U.esc(S.fmtUnits(u.totalCap)) + '，' + (u.warnActive ? '达 ' + u.warnPct + '% 时上方提醒' : '告警提醒已关闭') + '；单个账本超过其阈值时告警（阈值见容量设置）。</div>';
         h += '<div class="row" style="margin-top:12px;flex-wrap:wrap">' +
             '<button class="btn" data-act="editStorageCfg">容量与阈值设置</button>' +
             '<button class="btn danger" data-act="clearAll">清空所有缓存</button>' +
@@ -203,7 +218,6 @@
             '<div class="between" style="margin-top:8px"><span>当前版本</span><span class="sub">' + U.esc(window.APP_VERSION) + '</span></div>' +
             '<div class="between" style="margin-top:8px"><span>启动时自动更新</span>' +
             '<button class="btn" data-act="toggleUpdate">' + (s.checkUpdate ? '已开启' : '已关闭') + '</button></div>' +
-            '<div class="sub" style="margin-top:6px">关闭后 App 纯本地运行，不检查也不更新。</div>' +
             '<div style="margin-top:12px"><div class="sub"><b>本次版本更新内容（' + U.esc(window.APP_VERSION) + '）</b></div>' +
             '<div class="sub">' + U.esc(window.APP_NOTES || '无') + '</div></div>' +
             '</div>';
@@ -253,11 +267,13 @@
     }
     function modalStorageCfg() {
         var s = ZH.state.settings;
-        var capMb = ((s.storageCapUnits || S.DEFAULT_CAP_UNITS) * 2 / 1024 / 1024).toFixed(0); // 单元数换算回 MB
+        var capMb = ((s.storageCapUnits || S.DEFAULT_CAP_UNITS) * 2 / 1024 / 1024).toFixed(0); // 总量上限换算回 MB
+        var ledgerKb = ((s.ledgerCapUnits || S.DEFAULT_LEDGER_CAP_UNITS) * 2 / 1024).toFixed(0); // 单账本上限换算回 KB
         openModal('<h3>容量与阈值设置</h3>' +
-            '<p class="sub">浏览器不提供 localStorage 精确上限，此处为假定容量，用于估算占用比例。</p>' +
-            '<label class="f">假定容量上限（MB）</label><input id="sc_cap" type="number" inputmode="decimal" value="' + U.esc(capMb) + '">' +
-            '<label class="f">告警阈值（%）</label><input id="sc_warn" type="number" inputmode="numeric" value="' + U.esc(s.storageWarnPct || 80) + '">' +
+            '<p class="sub">浏览器不提供 localStorage 精确上限，此处为假定容量，用于估算占用比例。总量超上限将暂停写入；单账本仅提示，不阻断。</p>' +
+            '<label class="f">总量上限（整数 MB，1-4）</label><input id="sc_cap" type="number" inputmode="numeric" min="1" max="4" step="1" value="' + U.esc(capMb) + '">' +
+            '<label class="f">单账本上限（整数 KB，不得大于总量）</label><input id="sc_ledger" type="number" inputmode="numeric" min="1" step="1" value="' + U.esc(ledgerKb) + '">' +
+            '<label class="f">告警阈值（%，0-100，0 或 100 关闭）</label><input id="sc_warn" type="number" inputmode="numeric" min="0" max="100" step="1" value="' + U.esc(s.storageWarnPct == null ? 80 : s.storageWarnPct) + '">' +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="saveStorageCfg">保存</button></div>');
     }
     function modalSplit() {

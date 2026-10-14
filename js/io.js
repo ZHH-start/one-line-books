@@ -36,7 +36,7 @@
 
     function exportFull() {
         var st = ZH.state; if (!st.ledger) return Promise.resolve();
-        var filename = (st.ledger.header.name || '账本') + '.md';
+        var filename = (st.ledger.header.name || '账本') + '_' + U.fileStamp() + '.md';
         var text = L.serialize(st.ledger.header, st.ledger.records);
         return saveFile(filename, text).then(function (ok) {
             if (!ok) return; /* 用户取消 */
@@ -54,7 +54,7 @@
         newHeader.name = name;
         var text = L.serialize(newHeader, move);
         /* 保存成功后才从原账本移出，避免用户取消却已丢数据 */
-        return saveFile(name + '.md', text).then(function (ok) {
+        return saveFile(name + '_' + U.fileStamp() + '.md', text).then(function (ok) {
             if (!ok) return;
             st.ledger.records = keep;
             ZH.app.saveLedger(); markExported();
@@ -64,6 +64,7 @@
     }
 
     function importLedger(file) {
+        if (!ZH.app.guardWrite()) return; // 总量已满时不允许导入
         var reader = new FileReader();
         reader.onload = function () {
             var st = ZH.state;

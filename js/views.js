@@ -251,12 +251,30 @@
             '<label class="f">收入分类（用、分隔）</label><input id="c_inc" value="' + U.esc(he.incomeCategories.join('、')) + '">' +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="saveCategories">保存</button></div>');
     }
+    // 判断分类属于哪张分类表：'expense' / 'income' / ''（不在任何表）
+    function catKindOf(name) {
+        var he = ZH.state.ledger.header;
+        if (he.expenseCategories.indexOf(name) >= 0) return 'expense';
+        if (he.incomeCategories.indexOf(name) >= 0) return 'income';
+        return '';
+    }
+    // 来源分类切换时重建「目标」下拉为同一收支表内的分类，禁止跨表合并
+    function fillMergeTargets(fromCat) {
+        var toSel = U.$('#mg_to'); if (!toSel) return;
+        var kind = catKindOf(fromCat);
+        var cats = kind === 'income' ? ZH.state.ledger.header.incomeCategories : ZH.state.ledger.header.expenseCategories;
+        toSel.innerHTML = cats.map(function (c) { return '<option value="' + U.esc(c) + '">' + U.esc(c) + '</option>'; }).join('');
+    }
     function modalMergeCategory() {
-        var cats = ZH.state.ledger.header.expenseCategories.concat(ZH.state.ledger.header.incomeCategories);
-        var opts = cats.map(function (c) { return '<option value="' + U.esc(c) + '">' + U.esc(c) + '</option>'; }).join('');
-        openModal('<h3>合并分类</h3><p class="sub">所有引用「来源」的记录将改写为「目标」，来源分类从账本头移除。</p>' +
-            '<label class="f">来源分类</label><select id="mg_from">' + opts + '</select>' +
-            '<label class="f">目标分类</label><select id="mg_to">' + opts + '</select>' +
+        var he = ZH.state.ledger.header;
+        function grp(label, list) {
+            return '<optgroup label="' + label + '">' + list.map(function (c) { return '<option value="' + U.esc(c) + '">' + U.esc(c) + '</option>'; }).join('') + '</optgroup>';
+        }
+        var fromOpts = grp('支出分类', he.expenseCategories) + grp('收入分类', he.incomeCategories);
+        var toOpts = he.expenseCategories.map(function (c) { return '<option value="' + U.esc(c) + '">' + U.esc(c) + '</option>'; }).join('');
+        openModal('<h3>合并分类</h3><p class="sub">所有引用「来源」的记录将改写为「目标」，来源分类从账本头移除。仅允许同一收支表内合并。</p>' +
+            '<label class="f">来源分类</label><select id="mg_from">' + fromOpts + '</select>' +
+            '<label class="f">目标分类</label><select id="mg_to">' + toOpts + '</select>' +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="doMergeCategory">确认合并</button></div>');
     }
     function modalEditUserRules() {
@@ -301,14 +319,25 @@
             '<label class="f">账本名</label><input id="el_name" value="' + U.esc(ZH.state.ledger.header.name) + '">' +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="saveLedgerName">保存</button></div>');
     }
+    // 按类型返回对应分类表的 <option> 列表；selected 用于回填当前分类
+    function catOptions(type, selected) {
+        var cats = (type === '收入' ? ZH.state.ledger.header.incomeCategories : ZH.state.ledger.header.expenseCategories);
+        return cats.map(function (c) { return '<option' + (c === selected ? ' selected' : '') + '>' + U.esc(c) + '</option>'; }).join('');
+    }
+    // 类型切换时重建分类下拉：新类型表中仍有原分类则保留，否则回退首项
+    function fillCategoryOptions(sel, type) {
+        if (!sel) return;
+        var prev = sel.value;
+        var cats = (type === '收入' ? ZH.state.ledger.header.incomeCategories : ZH.state.ledger.header.expenseCategories);
+        var keep = cats.indexOf(prev) >= 0 ? prev : cats[0];
+        sel.innerHTML = cats.map(function (c) { return '<option' + (c === keep ? ' selected' : '') + '>' + U.esc(c) + '</option>'; }).join('');
+    }
     function modalEditRecord(idx) {
         var r = ZH.state.ledger.records[idx]; if (!r) return;
-        var cats = (r.type === '收入' ? ZH.state.ledger.header.incomeCategories : ZH.state.ledger.header.expenseCategories);
-        var opts = cats.map(function (c) { return '<option' + (c === r.category ? ' selected' : '') + '>' + U.esc(c) + '</option>'; }).join('');
         openModal('<h3>编辑记录</h3>' +
             '<label class="f">日期</label><input id="r_date" type="date" value="' + U.esc(r.date) + '">' +
             '<label class="f">类型</label><select id="r_type"><option value="支出"' + (r.type === '支出' ? ' selected' : '') + '>支出</option><option value="收入"' + (r.type === '收入' ? ' selected' : '') + '>收入</option></select>' +
-            '<label class="f">分类</label><select id="r_cat">' + opts + '</select>' +
+            '<label class="f">分类</label><select id="r_cat">' + catOptions(r.type, r.category) + '</select>' +
             '<label class="f">金额</label><input id="r_amt" type="number" inputmode="decimal" value="' + U.esc(r.amount) + '">' +
             '<label class="f">备注</label><input id="r_note" value="' + U.esc(r.note || '') + '">' +
             '<div class="modal-actions"><button class="btn danger" data-act="delRecord" data-idx="' + idx + '">删除</button><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="saveRecord" data-idx="' + idx + '">保存</button></div>');
@@ -331,7 +360,8 @@
         openModal: openModal, closeModal: closeModal, modalNewLedger: modalNewLedger, modalEditGoal: modalEditGoal,
         modalEditCategories: modalEditCategories, modalMergeCategory: modalMergeCategory, modalEditUserRules: modalEditUserRules,
         modalEditLedger: modalEditLedger, modalStorageCfg: modalStorageCfg,
-        modalSplit: modalSplit, modalSwitchLedger: modalSwitchLedger, modalEditRecord: modalEditRecord, modalRecordFromChat: modalRecordFromChat
+        modalSplit: modalSplit, modalSwitchLedger: modalSwitchLedger, modalEditRecord: modalEditRecord, modalRecordFromChat: modalRecordFromChat,
+        fillCategoryOptions: fillCategoryOptions, fillMergeTargets: fillMergeTargets
     };
 })(window.ZH = window.ZH || {});
 

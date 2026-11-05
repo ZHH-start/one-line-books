@@ -90,35 +90,191 @@
         return h;
     }
 
-    function viewStats() {
-        var st = ZH.state, mode = st.statMode;
-        var h = '<div class="tabs">' + [['day', '日'], ['month', '月'], ['year', '年']].map(function (t) {
-            return '<button class="' + (mode === t[0] ? 'on' : '') + '" data-act="statMode" data-mode="' + t[0] + '">' + t[1] + '</button>';
-        }).join('') + '</div>';
-        var buckets = {}, catExp = {}, catInc = {};
-        st.ledger.records.forEach(function (r) {
-            var key = r.date;
-            if (mode === 'month') key = r.date.slice(0, 7);
-            else if (mode === 'year') key = r.date.slice(0, 4);
-            if (!buckets[key]) buckets[key] = { inc: 0, exp: 0 };
-            if (r.type === '收入') { buckets[key].inc += r.amount; catInc[r.category] = (catInc[r.category] || 0) + r.amount; }
-            else { buckets[key].exp += r.amount; catExp[r.category] = (catExp[r.category] || 0) + r.amount; }
-        });
-        var keys = Object.keys(buckets).sort();
-        if (mode === 'day') keys = keys.slice(-31);
-        else if (mode === 'month') keys = keys.slice(-12);
-        else keys = keys.slice(-6);
-        h += '<div class="card"><div class="between"><b>收支趋势</b><span class="sub">' + mode + '</span></div>';
-        if (!keys.length) h += '<div class="empty">暂无数据</div>';
-        else {
-            h += ZH.charts.lineChart(keys.map(function (k) { return { label: k, inc: buckets[k].inc, exp: buckets[k].exp }; }));
-            h += '<div class="legend"><span><i class="dot" style="background:var(--income)"></i>收入</span><span><i class="dot" style="background:var(--expense)"></i>支出</span></div>';
+    /* ---------- 统计 ---------- */
+    function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+    function dateStr(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+    function parseDate(s) { var p = String(s).split('-'); return new Date(+p[0], (+p[1] || 1) - 1, +p[2] || 1); }
+    function addDays(d, n) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() + n); return x; }
+    function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+    function weekStart(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return addDays(x, -((x.getDay() + 6) % 7)); }
+
+    var STAT_RANGES = [['month', '本月'], ['lastMonth', '上月'], ['3m', '近3月'], ['year', '近1年'], ['all', '全部']];
+    var STAT_RANGE_LABEL = { month: '本月', lastMonth: '上月', '3m': '近3月', year: '近1年', all: '全部' };
+    var STAT_GRAN_LABEL = { day: '按日', week: '按周', month: '按月', year: '按年' };
+
+    function statRangeBounds(range) {
+        var today = parseDate(U.todayStr()), start = null, end = today;
+        if (range === 'month') start = new Date(today.getFullYear(), today.getMonth(), 1);
+        else if (range === 'lastMonth') {
+            start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            end = new Date(today.getFullYear(), today.getMonth(), 0);
         }
-        h += '</div>';
-        var expSegs = Object.keys(catExp).map(function (k) { return { label: k, value: catExp[k] }; });
-        var incSegs = Object.keys(catInc).map(function (k) { return { label: k, value: catInc[k] }; });
-        h += '<div class="card"><b>支出分类占比</b>' + ZH.charts.pieBlock(expSegs) + '</div>';
-        h += '<div class="card"><b>收入分类占比</b>' + ZH.charts.pieBlock(incSegs) + '</div>';
+        else if (range === '3m') start = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+        else if (range === 'year') start = new Date(today.getFullYear(), today.getMonth() - 11, 1);
+        return { label: STAT_RANGE_LABEL[range] || '全部', start: start, end: range === 'all' ? null : end };
+    }
+
+    /* 过滤时间范围，并决定趋势图的聚合粒度 */
+    function statCollect(range) {
+        var st = ZH.state, meta = statRangeBounds(range);
+        var startStr = meta.start ? dateStr(meta.start) : null;
+        var endStr = meta.end ? dateStr(meta.end) : null;
+        var records = st.ledger.records.filter(function (r) {
+            if (startStr && r.date < startStr) return false;
+            if (endStr && r.date > endStr) return false;
+            return true;
+        });
+        /* 全部范围：以最早记录 ~ 今天为趋势图边界（有未来记录时延伸到最晚记录） */
+        if (range === 'all' && records.length) {
+            var dates = records.map(function (r) { return r.date; }).sort();
+            var today = U.todayStr();
+            startStr = dates[0];
+            endStr = dates[dates.length - 1] > today ? dates[dates.length - 1] : today;
+        }
+        var gran = 'month';
+        if (range === 'month' || range === 'lastMonth') gran = 'day';
+        else if (range === '3m') gran = 'week';
+        else if (range === 'year') gran = 'month';
+        else if (startStr && endStr) {
+            var days = Math.round((parseDate(endStr) - parseDate(startStr)) / 86400000);
+            gran = days <= 62 ? 'day' : days <= 730 ? 'month' : 'year';
+        }
+        return { meta: meta, records: records, startStr: startStr, endStr: endStr, gran: gran };
+    }
+
+    function statBucketKeys(startStr, endStr, gran) {
+        if (!startStr || !endStr) return [];
+        var keys = [], d, end = parseDate(endStr);
+        if (gran === 'day') {
+            for (d = parseDate(startStr); d <= end; d = addDays(d, 1)) keys.push(dateStr(d));
+        } else if (gran === 'week') {
+            for (d = weekStart(parseDate(startStr)); d <= end; d = addDays(d, 7)) keys.push(dateStr(d));
+        } else if (gran === 'month') {
+            var sm = parseDate(startStr);
+            for (d = new Date(sm.getFullYear(), sm.getMonth(), 1); d <= end; d = addMonths(d, 1)) keys.push(dateStr(d).slice(0, 7));
+        } else {
+            for (var y = parseDate(startStr).getFullYear(), ey = end.getFullYear(); y <= ey; y++) keys.push(String(y));
+        }
+        return keys;
+    }
+
+    function statBucketKey(date, gran) {
+        if (gran === 'day') return date;
+        if (gran === 'week') return dateStr(weekStart(parseDate(date)));
+        if (gran === 'month') return date.slice(0, 7);
+        return date.slice(0, 4);
+    }
+
+    function statBucketLabel(key, gran) {
+        if (gran === 'year') return key;
+        if (gran === 'month') return key.slice(2).replace('-', '/');
+        return key.slice(5);
+    }
+
+    function statTrendData(ctx) {
+        var keys = statBucketKeys(ctx.startStr, ctx.endStr, ctx.gran), buckets = {};
+        keys.forEach(function (k) { buckets[k] = { inc: 0, exp: 0 }; });
+        ctx.records.forEach(function (r) {
+            var k = statBucketKey(r.date, ctx.gran);
+            if (!buckets[k]) buckets[k] = { inc: 0, exp: 0 };
+            if (r.type === '收入') buckets[k].inc += r.amount;
+            else buckets[k].exp += r.amount;
+        });
+        return keys.map(function (k) {
+            return { label: statBucketLabel(k, ctx.gran), inc: buckets[k].inc, exp: buckets[k].exp };
+        });
+    }
+
+    function statCategoryData(records, type) {
+        var map = {}, total = 0, count = 0;
+        records.forEach(function (r) {
+            if (r.type !== type) return;
+            if (!map[r.category]) map[r.category] = { label: r.category, value: 0, count: 0 };
+            map[r.category].value += r.amount;
+            map[r.category].count++;
+            total += r.amount;
+            count++;
+        });
+        var segs = Object.keys(map).map(function (k) { return map[k]; });
+        segs.sort(function (a, b) { return b.value - a.value; });
+        return { segs: segs, total: total, count: count };
+    }
+
+    /* 一个收支栏目：汇总 + 单线趋势 + 饼图/分类横栏（点击展开该分类账目） */
+    function statSection(ctx, type) {
+        var st = ZH.state;
+        var isExp = type === 'expense', typeName = isExp ? '支出' : '收入';
+        var cls = isExp ? 'expense' : 'income';
+        var data = statCategoryData(ctx.records, isExp ? '支出' : '收入');
+        var h = '<div class="card stat-section">' +
+            '<div class="between"><div class="stat-title"><b>' + typeName + '</b><span class="sub">共 ' + data.count + ' 笔' + (data.count ? ' · 点击分类查看账目' : '') + '</span></div>' +
+            '<div class="stat-total ' + cls + '">' + U.fmt(data.total) + '</div></div>';
+        if (!data.count) return h + '<div class="empty">该时间范围内暂无' + typeName + '记录</div></div>';
+
+        h += '<div class="stat-trend">' + ZH.charts.lineChart(statTrendData(ctx), {
+            height: 150,
+            series: [{ key: isExp ? 'exp' : 'inc', color: isExp ? 'var(--expense)' : 'var(--income)', name: typeName }]
+        }) + '</div>';
+
+        /* 负金额分类（如退款）不参与占比，避免饼图/百分比失真 */
+        var segs = data.segs.filter(function (s) { return s.value > 0; });
+        var pieTotal = segs.reduce(function (sum, s) { return sum + s.value; }, 0);
+        var open = st.statOpen;
+        var rows = segs.map(function (s, i) {
+            var pct = pieTotal > 0 ? s.value / pieTotal * 100 : 0;
+            var key = type + ':' + s.label;
+            var isOpen = open === key;
+            var color = U.colorAt(i);
+            var recordsHtml = '';
+            if (isOpen) {
+                var recs = ctx.records.filter(function (r) {
+                    return r.type === (isExp ? '支出' : '收入') && r.category === s.label;
+                });
+                recs.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+                recordsHtml = '<div class="stat-records">' + recs.map(function (r) {
+                    var idx = st.ledger.records.indexOf(r);
+                    return '<div class="stat-rec" data-act="editRecord" data-idx="' + idx + '">' +
+                        '<span class="sr-date">' + U.esc(r.date) + '</span>' +
+                        '<span class="sr-note">' + U.esc(r.note || '—') + '</span>' +
+                        '<span class="sr-amt ' + cls + '">' + (isExp ? '-' : '+') + U.fmt(Math.abs(r.amount)) + '</span>' +
+                        '</div>';
+                }).join('') + '</div>';
+            }
+            return '<div class="cat-item' + (isOpen ? ' open' : '') + '">' +
+                '<div class="cat-row" data-act="statToggle" data-type="' + type + '" data-cat="' + U.esc(s.label) + '">' +
+                '<div class="cat-line"><span class="cat-name"><i class="dot" style="background:' + color + '"></i>' + U.esc(s.label) + '</span>' +
+                '<span class="cat-amount"><b>' + U.fmt(s.value) + '</b><span class="sub"> ' + pct.toFixed(1) + '% · ' + s.count + '笔</span></span></div>' +
+                '<div class="cat-bar"><i style="width:' + pct.toFixed(1) + '%;background:' + color + '"></i></div>' +
+                '</div>' + recordsHtml + '</div>';
+        }).join('');
+
+        h += '<div class="stat-cats">' +
+            (pieTotal > 0 ? '<div class="stat-pie">' + ZH.charts.pieChart(segs, pieTotal, 168) + '</div>' : '') +
+            '<div class="cat-list">' + (rows || '<div class="empty">暂无可展示的分类</div>') + '</div>' +
+            '</div></div>';
+        return h;
+    }
+
+    function viewStats() {
+        var st = ZH.state;
+        var range = STAT_RANGE_LABEL[st.statRange] ? st.statRange : 'year';
+        var ctx = statCollect(range);
+        var inc = 0, exp = 0;
+        ctx.records.forEach(function (r) { if (r.type === '收入') inc += r.amount; else exp += r.amount; });
+        var bal = inc - exp;
+        var h = '<div class="card stat-overview">' +
+            '<div class="tabs stat-tabs">' + STAT_RANGES.map(function (t) {
+                return '<button class="' + (range === t[0] ? 'on' : '') + '" data-act="statRange" data-range="' + t[0] + '">' + t[1] + '</button>';
+            }).join('') + '</div>' +
+            '<div class="stat-range"><span class="sub">' +
+            (ctx.startStr && ctx.endStr ? U.esc(ctx.startStr) + ' ~ ' + U.esc(ctx.endStr) : '全部记录') +
+            ' · ' + (STAT_GRAN_LABEL[ctx.gran] || '') + '统计 · 共 ' + ctx.records.length + ' 笔</span></div>' +
+            '<div class="grid3" style="margin-top:10px">' +
+            '<div><div class="big expense">' + U.fmt(exp) + '</div><div class="sub">支出</div></div>' +
+            '<div><div class="big income">' + U.fmt(inc) + '</div><div class="sub">收入</div></div>' +
+            '<div><div class="big ' + (bal >= 0 ? 'income' : 'expense') + '">' + U.fmt(bal) + '</div><div class="sub">结余</div></div>' +
+            '</div></div>';
+        h += '<div class="stat-sections">' + statSection(ctx, 'expense') + statSection(ctx, 'income') + '</div>';
         return h;
     }
 
@@ -251,12 +407,30 @@
             '<label class="f">收入分类（用、分隔）</label><input id="c_inc" value="' + U.esc(he.incomeCategories.join('、')) + '">' +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="saveCategories">保存</button></div>');
     }
+    // 判断分类属于哪张分类表：'expense' / 'income' / ''（不在任何表）
+    function catKindOf(name) {
+        var he = ZH.state.ledger.header;
+        if (he.expenseCategories.indexOf(name) >= 0) return 'expense';
+        if (he.incomeCategories.indexOf(name) >= 0) return 'income';
+        return '';
+    }
+    // 来源分类切换时重建「目标」下拉为同一收支表内的分类，禁止跨表合并
+    function fillMergeTargets(fromCat) {
+        var toSel = U.$('#mg_to'); if (!toSel) return;
+        var kind = catKindOf(fromCat);
+        var cats = kind === 'income' ? ZH.state.ledger.header.incomeCategories : ZH.state.ledger.header.expenseCategories;
+        toSel.innerHTML = cats.map(function (c) { return '<option value="' + U.esc(c) + '">' + U.esc(c) + '</option>'; }).join('');
+    }
     function modalMergeCategory() {
-        var cats = ZH.state.ledger.header.expenseCategories.concat(ZH.state.ledger.header.incomeCategories);
-        var opts = cats.map(function (c) { return '<option value="' + U.esc(c) + '">' + U.esc(c) + '</option>'; }).join('');
-        openModal('<h3>合并分类</h3><p class="sub">所有引用「来源」的记录将改写为「目标」，来源分类从账本头移除。</p>' +
-            '<label class="f">来源分类</label><select id="mg_from">' + opts + '</select>' +
-            '<label class="f">目标分类</label><select id="mg_to">' + opts + '</select>' +
+        var he = ZH.state.ledger.header;
+        function grp(label, list) {
+            return '<optgroup label="' + label + '">' + list.map(function (c) { return '<option value="' + U.esc(c) + '">' + U.esc(c) + '</option>'; }).join('') + '</optgroup>';
+        }
+        var fromOpts = grp('支出分类', he.expenseCategories) + grp('收入分类', he.incomeCategories);
+        var toOpts = he.expenseCategories.map(function (c) { return '<option value="' + U.esc(c) + '">' + U.esc(c) + '</option>'; }).join('');
+        openModal('<h3>合并分类</h3><p class="sub">所有引用「来源」的记录将改写为「目标」，来源分类从账本头移除。仅允许同一收支表内合并。</p>' +
+            '<label class="f">来源分类</label><select id="mg_from">' + fromOpts + '</select>' +
+            '<label class="f">目标分类</label><select id="mg_to">' + toOpts + '</select>' +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="doMergeCategory">确认合并</button></div>');
     }
     function modalEditUserRules() {
@@ -301,14 +475,25 @@
             '<label class="f">账本名</label><input id="el_name" value="' + U.esc(ZH.state.ledger.header.name) + '">' +
             '<div class="modal-actions"><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="saveLedgerName">保存</button></div>');
     }
+    // 按类型返回对应分类表的 <option> 列表；selected 用于回填当前分类
+    function catOptions(type, selected) {
+        var cats = (type === '收入' ? ZH.state.ledger.header.incomeCategories : ZH.state.ledger.header.expenseCategories);
+        return cats.map(function (c) { return '<option' + (c === selected ? ' selected' : '') + '>' + U.esc(c) + '</option>'; }).join('');
+    }
+    // 类型切换时重建分类下拉：新类型表中仍有原分类则保留，否则回退首项
+    function fillCategoryOptions(sel, type) {
+        if (!sel) return;
+        var prev = sel.value;
+        var cats = (type === '收入' ? ZH.state.ledger.header.incomeCategories : ZH.state.ledger.header.expenseCategories);
+        var keep = cats.indexOf(prev) >= 0 ? prev : cats[0];
+        sel.innerHTML = cats.map(function (c) { return '<option' + (c === keep ? ' selected' : '') + '>' + U.esc(c) + '</option>'; }).join('');
+    }
     function modalEditRecord(idx) {
         var r = ZH.state.ledger.records[idx]; if (!r) return;
-        var cats = (r.type === '收入' ? ZH.state.ledger.header.incomeCategories : ZH.state.ledger.header.expenseCategories);
-        var opts = cats.map(function (c) { return '<option' + (c === r.category ? ' selected' : '') + '>' + U.esc(c) + '</option>'; }).join('');
         openModal('<h3>编辑记录</h3>' +
             '<label class="f">日期</label><input id="r_date" type="date" value="' + U.esc(r.date) + '">' +
             '<label class="f">类型</label><select id="r_type"><option value="支出"' + (r.type === '支出' ? ' selected' : '') + '>支出</option><option value="收入"' + (r.type === '收入' ? ' selected' : '') + '>收入</option></select>' +
-            '<label class="f">分类</label><select id="r_cat">' + opts + '</select>' +
+            '<label class="f">分类</label><select id="r_cat">' + catOptions(r.type, r.category) + '</select>' +
             '<label class="f">金额</label><input id="r_amt" type="number" inputmode="decimal" value="' + U.esc(r.amount) + '">' +
             '<label class="f">备注</label><input id="r_note" value="' + U.esc(r.note || '') + '">' +
             '<div class="modal-actions"><button class="btn danger" data-act="delRecord" data-idx="' + idx + '">删除</button><button class="btn" data-act="closeModal">取消</button><button class="btn primary" data-act="saveRecord" data-idx="' + idx + '">保存</button></div>');
@@ -331,7 +516,8 @@
         openModal: openModal, closeModal: closeModal, modalNewLedger: modalNewLedger, modalEditGoal: modalEditGoal,
         modalEditCategories: modalEditCategories, modalMergeCategory: modalMergeCategory, modalEditUserRules: modalEditUserRules,
         modalEditLedger: modalEditLedger, modalStorageCfg: modalStorageCfg,
-        modalSplit: modalSplit, modalSwitchLedger: modalSwitchLedger, modalEditRecord: modalEditRecord, modalRecordFromChat: modalRecordFromChat
+        modalSplit: modalSplit, modalSwitchLedger: modalSwitchLedger, modalEditRecord: modalEditRecord, modalRecordFromChat: modalRecordFromChat,
+        fillCategoryOptions: fillCategoryOptions, fillMergeTargets: fillMergeTargets
     };
 })(window.ZH = window.ZH || {});
 

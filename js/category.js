@@ -31,6 +31,10 @@
         merge: function (ledger, from, to) {
             if (!from || !to || from === to) return -1;
             var header = ledger.header, records = ledger.records;
+            // 来源与目标必须同属一张分类表（支出或收入），否则会产生类型与分类错配，拒绝
+            var fromExp = header.expenseCategories.indexOf(from) >= 0, fromInc = header.incomeCategories.indexOf(from) >= 0;
+            var toExp = header.expenseCategories.indexOf(to) >= 0, toInc = header.incomeCategories.indexOf(to) >= 0;
+            if (!((fromExp && toExp) || (fromInc && toInc))) return -1;
             var changed = 0;
             records.forEach(function (r) { if (r.category === from) { r.category = to; changed++; } });
             ['expenseCategories', 'incomeCategories'].forEach(function (k) {

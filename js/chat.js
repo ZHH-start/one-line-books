@@ -87,7 +87,7 @@
     }
 
     /* 发起流式请求：状态气泡 + 首 token 超时 + 失败标记 */
-    function startRequest(text, userIdx) {
+    function startRequest(text, userIdx, onDone) {
         var st = ZH.state;
         var ledgerId = st.currentId;
         st.chatBusy = { phase: 'thinking' };
@@ -130,6 +130,7 @@
                 var del = st.ledger.records.splice(di, 1)[0]; ZH.app.saveLedger();
                 pushAI('已删除：' + del.category + ' ' + U.fmt(del.amount) + '（' + (del.note || '') + '）');
             }
+            if (onDone) onDone();
         }).catch(function (err) {
             clearTimeout(timer);
             var reason = controller.__abortReason || (controller.signal ? controller.signal.reason : null);
@@ -139,6 +140,7 @@
 
             if (err && err.code === 'NO_API') {
                 failAI(userIdx, '尚未配置 API，请前往设置页配置后再记账。', false);
+                if (onDone) onDone();
                 return;
             }
             var why = reason === 'timeout' ? 'AI 无响应' : (aborted ? '已停止' : '发送失败，请检查模型api接入配置。');
@@ -147,6 +149,7 @@
                 ZH.app.savePending();
             }
             failAI(userIdx, why + '，可删除该消息后重新输入。', true);
+            if (onDone) onDone();
         });
     }
 
@@ -204,10 +207,17 @@
         var list = currentPending();
         st.pending = st.pending.filter(function (p) { return p.ledgerId !== st.currentId; });
         ZH.app.savePending(); ZH.views.closeModal();
-        var txts = list.map(function (p) { return p.text; }).join('\n');
         if (st.view !== 'record') { st.view = 'record'; ZH.app.render(); }
-        var input = U.$('#chatInput');
-        if (input) { input.value = txts; handleSend(); }
+        if (!list.length) return;
+
+        function sendNext(index) {
+            if (index >= list.length) return;
+            var item = list[index];
+            st.chat.push({ role: 'user', text: item.text });
+            saveAndRender();
+            startRequest(item.text, st.chat.length - 1, function () { sendNext(index + 1); });
+        }
+        sendNext(0);
     }
     function discardPending() {
         var st = ZH.state;

@@ -36,13 +36,54 @@
         }).join('\n');
     }
 
-    /* 从字符串中提取结构化 JSON：整体解析失败则截取花括号片段兜底。 */
+    /* 从字符串中提取结构化 JSON：优先直接解析，失败时尝试 fenced block / 平衡括号片段兜底。 */
     function extractJSON(str) {
         str = String(str == null ? '' : str).trim();
+        if (!str) return null;
         try { return JSON.parse(str); } catch (e) { }
-        var m = str.match(/\{[\s\S]*\}/);
-        if (m) { try { return JSON.parse(m[0]); } catch (e) { } }
-        return null;
+
+        var fence = str.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (fence && fence[1]) {
+            try { return JSON.parse(fence[1].trim()); } catch (e) { }
+        }
+
+        var best = null, bestLen = 0;
+        function tryFrom(startChar) {
+            var start = str.indexOf(startChar);
+            while (start >= 0) {
+                var depth = 0, inStr = false, escaped = false;
+                for (var i = start; i < str.length; i++) {
+                    var ch = str.charAt(i);
+                    if (inStr) {
+                        if (escaped) escaped = false;
+                        else if (ch === '\\') escaped = true;
+                        else if (ch === '"') inStr = false;
+                        continue;
+                    }
+                    if (ch === '"') { inStr = true; continue; }
+                    if (ch === startChar) depth += 1;
+                    else if ((startChar === '{' && ch === '}') || (startChar === '[' && ch === ']')) {
+                        depth -= 1;
+                        if (depth === 0) {
+                            var candidate = str.slice(start, i + 1);
+                            try {
+                                var parsed = JSON.parse(candidate);
+                                if (candidate.length > bestLen) {
+                                    best = parsed;
+                                    bestLen = candidate.length;
+                                }
+                            } catch (e) { }
+                            break;
+                        }
+                    }
+                }
+                start = str.indexOf(startChar, start + 1);
+            }
+        }
+
+        tryFrom('{');
+        tryFrom('[');
+        return best;
     }
 
     /* 从 Chat Completions 原始响应中取出结构化 JSON */

@@ -7,7 +7,7 @@
     var state = {
         index: [], currentId: null, ledger: null,
         settings: {}, chat: [], pending: [],
-        view: 'overview', statMode: 'month',
+        view: 'overview', statRange: 'year', statOpen: null,
         detailQuery: '', detailMonth: '',
         chatBusy: null, chatAbort: null
     };
@@ -192,7 +192,8 @@
         var from = U.$('#mg_from').value, to = U.$('#mg_to').value;
         if (from === to) { U.toast('来源与目标不能相同'); return; }
         var cnt = ZH.category.countRefs(state.ledger, from);
-        ZH.category.merge(state.ledger, from, to);
+        // merge 返回 -1 表示跨收支表等非法合并，拒绝执行
+        if (ZH.category.merge(state.ledger, from, to) < 0) { U.toast('来源与目标必须属于同一收支类型'); return; }
         saveLedger(); V.closeModal(); render();
         U.toast('已合并「' + from + '」→「' + to + '」，改写 ' + cnt + ' 条');
     }
@@ -209,8 +210,12 @@
     function saveRecord(el) {
         var r = state.ledger.records[parseInt(el.getAttribute('data-idx'), 10)];
         if (!r) return;
-        r.date = U.$('#r_date').value; r.type = U.$('#r_type').value;
-        r.category = U.$('#r_cat').value; r.note = U.$('#r_note').value;
+        var type = U.$('#r_type').value, category = U.$('#r_cat').value;
+        // 类型与分类必须属于同一张分类表，避免写入「收入+支出分类」这类错配记录
+        var list = type === '收入' ? state.ledger.header.incomeCategories : state.ledger.header.expenseCategories;
+        if (list.indexOf(category) < 0) { U.toast('分类与类型不匹配，请重新选择分类'); return; }
+        r.date = U.$('#r_date').value; r.type = type;
+        r.category = category; r.note = U.$('#r_note').value;
         r.amount = Math.round(parseFloat(U.$('#r_amt').value) * 100) / 100 || 0;
         saveLedger(); V.closeModal(); render();
     }
@@ -350,7 +355,16 @@
         userMsg: function (el) { ZH.chat.askDeleteUserMsg(el); },
         doDeleteUserMsg: function (el) { ZH.chat.doDeleteUserMsg(el); },
         setTheme: setTheme,
-        statMode: function (el) { state.statMode = el.getAttribute('data-mode'); render(); },
+        statRange: function (el) {
+            state.statRange = el.getAttribute('data-range');
+            state.statOpen = null;
+            renderKeepScroll();
+        },
+        statToggle: function (el) {
+            var key = el.getAttribute('data-type') + ':' + el.getAttribute('data-cat');
+            state.statOpen = state.statOpen === key ? null : key;
+            renderKeepScroll();
+        },
         pendingResend: function () { ZH.chat.resendPending(); },
         pendingDiscard: function () { ZH.chat.discardPending(); },
     };
@@ -361,6 +375,13 @@
         if (!el) return;
         var fn = ACTIONS[el.getAttribute('data-act')];
         if (fn) fn(el, e);
+    }
+
+    // 统计页切换范围/展开分类时保留 main 的滚动位置
+    function renderKeepScroll() {
+        var m = U.$('#main'), top = m ? m.scrollTop : 0;
+        render();
+        if (m) m.scrollTop = top;
     }
 
     /* ---------- 主题模式 ---------- */
@@ -465,6 +486,11 @@
         if (tm) { if (tm.addEventListener) tm.addEventListener('change', onSystemThemeChange); else if (tm.addListener) tm.addListener(onSystemThemeChange); }
         /* 升级提示优先：升级期间不自动弹 iOS 引导，避免被其抢走或被覆盖 */
         S.persistStorage(); checkVersion(); if (!didUpgrade) iosGuide();
+        // current 指针失效但索引仍有账本时，回落到最近使用的账本，避免用户被困在无账本态
+        if (!(state.currentId && findIndexItem(state.currentId)) && state.index.length) {
+            state.currentId = state.index[0].id;
+            Store.set(K.cur, state.currentId);
+        }
         if (state.currentId && findIndexItem(state.currentId)) {
             var txt = Store.getText(K.ledger(state.currentId));
             if (txt != null) {
@@ -491,6 +517,10 @@
         });
         document.addEventListener('change', function (e) {
             if (e.target.id === 'monthInput') { state.detailMonth = e.target.value; render(); }
+            // 编辑记录时切换类型：同步重建分类下拉
+            else if (e.target.id === 'r_type') { V.fillCategoryOptions(U.$('#r_cat'), e.target.value); }
+            // 合并分类时切换来源：同步重建目标下拉为同一收支表内的分类
+            else if (e.target.id === 'mg_from') { V.fillMergeTargets(e.target.value); }
         });
         document.addEventListener('keydown', function (e) {
             if (e.key !== 'Enter') return;

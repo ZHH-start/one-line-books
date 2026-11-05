@@ -6,6 +6,8 @@
 
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](LICENSE)
 
+**直接使用**：<https://one-line-books.pages.dev>
+
 ## 特性
 
 - **自然语言记账**：说一句话，AI 解析为结构化记录并回显确认。
@@ -51,7 +53,17 @@ python3 -m http.server 8080
 
 ## 部署
 
-- nginx 等静态托管，Basic Auth 由部署层负责（不属于本应用）。
+本项目是纯前端静态应用，任意静态托管均可运行，无需构建。
+
+### Cloudflare Pages（合作部署实例）
+
+- 访问地址：<https://one-line-books.pages.dev>
+- 平台：Cloudflare Pages
+
+### 自托管
+
+- 可用 nginx 等静态服务器托管 `index.html`、`css/`、`js/`、`version.json`、`icon.svg`。
+- Basic Auth 由部署层负责，不属于本应用。
 
 ## 使用
 

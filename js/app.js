@@ -7,7 +7,7 @@
     var state = {
         index: [], currentId: null, ledger: null,
         settings: {}, chat: [], pending: [],
-        view: 'overview', statMode: 'month',
+        view: 'overview', statRange: 'year', statOpen: null,
         detailQuery: '', detailMonth: '',
         chatBusy: null, chatAbort: null
     };
@@ -355,7 +355,16 @@
         userMsg: function (el) { ZH.chat.askDeleteUserMsg(el); },
         doDeleteUserMsg: function (el) { ZH.chat.doDeleteUserMsg(el); },
         setTheme: setTheme,
-        statMode: function (el) { state.statMode = el.getAttribute('data-mode'); render(); },
+        statRange: function (el) {
+            state.statRange = el.getAttribute('data-range');
+            state.statOpen = null;
+            renderKeepScroll();
+        },
+        statToggle: function (el) {
+            var key = el.getAttribute('data-type') + ':' + el.getAttribute('data-cat');
+            state.statOpen = state.statOpen === key ? null : key;
+            renderKeepScroll();
+        },
         pendingResend: function () { ZH.chat.resendPending(); },
         pendingDiscard: function () { ZH.chat.discardPending(); },
     };
@@ -366,6 +375,13 @@
         if (!el) return;
         var fn = ACTIONS[el.getAttribute('data-act')];
         if (fn) fn(el, e);
+    }
+
+    // 统计页切换范围/展开分类时保留 main 的滚动位置
+    function renderKeepScroll() {
+        var m = U.$('#main'), top = m ? m.scrollTop : 0;
+        render();
+        if (m) m.scrollTop = top;
     }
 
     /* ---------- 主题模式 ---------- */

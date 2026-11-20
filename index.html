@@ -22,6 +22,25 @@
   }
 })();
 </script>
+<script>
+// PWA 预研已放弃：注销遗留 Service Worker 并清理其 app shell 缓存，避免 cache-first 命中旧页面
+(function () {
+  try {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (reg) { reg.unregister(); });
+      }).catch(function () { });
+    }
+    if (window.caches && caches.keys) {
+      caches.keys().then(function (keys) {
+        keys.forEach(function (key) {
+          if (key.indexOf('one-line-books-shell-') === 0) caches.delete(key);
+        });
+      }).catch(function () { });
+    }
+  } catch (e) { }
+})();
+</script>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/style.css">
 <title>一句话账本</title>

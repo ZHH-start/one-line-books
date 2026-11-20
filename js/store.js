@@ -10,9 +10,8 @@
         pending: function (id) { return 'zh:pending:' + id; },
         lastExport: function (id) { return 'zh:lastExport:' + id; },
         iosGuided: 'zh:iosGuided',
-        /* 升级状态自包含记录（升级判断的唯一依据，不依赖 HTTP 缓存时序）：
-           { phase: 'pending', to, notes, from } —— 已决定升到 to，等待刷新后生效
-           { phase: 'done', version, notes }     —— 当前页面即为 version */
+        /* 记录已处理升级提示的代码版本；更新检查始终以 APP_VERSION 为准。 */
+        versionNotice: 'zh:versionNotice',
         upgrade: 'zh:upgrade'
     };
 

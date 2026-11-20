@@ -368,12 +368,10 @@
             '</div>';
         h += '<div class="sub" style="margin-top:8px">清空将删除全部账本、对话记录、API 配置（含 Key）等本地数据，且不可恢复。建议先导出备份。</div>';
         h += '</div>';
-        /* 设置最后一条：启动时自动更新开关 + 本版本更新内容。
-           开关关闭 = 纯本地运行；打开时检查一次，若有更新则提示先备份、刷新即更新。 */
+        /* 设置最后一条：自动更新说明 + 本版本更新内容。更新检查固定开启，不提供开关。 */
         h += '<div class="card"><b>更新</b>' +
             '<div class="between" style="margin-top:8px"><span>当前版本</span><span class="sub">' + U.esc(window.APP_VERSION) + '</span></div>' +
-            '<div class="between" style="margin-top:8px"><span>启动时自动更新</span>' +
-            '<button class="btn" data-act="toggleUpdate">' + (s.checkUpdate ? '已开启' : '已关闭') + '</button></div>' +
+            '<div class="sub" style="margin-top:8px">启动时自动检查并更新，不提供关闭选项。</div>' +
             '<div style="margin-top:12px"><div class="sub"><b>本次版本更新内容（' + U.esc(window.APP_VERSION) + '）</b></div>' +
             '<div class="sub">' + U.esc(window.APP_NOTES || '无') + '</div></div>' +
             '</div>';

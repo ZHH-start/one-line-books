@@ -14,7 +14,7 @@
     ZH.state = state;
 
     function loadSettings() {
-        state.settings = Store.get(K.settings, { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-chat', checkUpdate: true, theme: 'system' });
+        state.settings = Store.get(K.settings, { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-chat', theme: 'system' });
         if (!state.settings.theme) state.settings.theme = 'system';
         if (!state.settings.storageCapUnits) state.settings.storageCapUnits = S.DEFAULT_CAP_UNITS; // 总量上限，默认 4MB
         if (!state.settings.ledgerCapUnits) state.settings.ledgerCapUnits = S.DEFAULT_LEDGER_CAP_UNITS; // 单账本名义上限，默认 800K
@@ -292,29 +292,6 @@
         V.closeModal(); render();
         U.toast('已清空所有缓存');
     }
-    /* 启动时自动更新开关：
-       - 关闭 → 纯本地运行（不检查、不更新）。
-       - 打开 → 先检查一次；若确有可升级版本，提醒先备份账单，刷新页面即更新。 */
-    function toggleUpdate() {
-        if (state.settings.checkUpdate) {
-            state.settings.checkUpdate = false; saveSettings(); render();
-            U.toast('已关闭自动更新，App 将纯本地运行');
-            return;
-        }
-        state.settings.checkUpdate = true; saveSettings(); if (state.view === 'settings') render();
-        fetch('version.json', { cache: 'no-store' }).then(function (r) {
-            if (!r.ok) throw 0; return r.json();
-        }).then(function (v) {
-            var s = Store.get(K.upgrade, null) || {};
-            var cur = s.version || window.APP_VERSION;
-            if (v && v.version && v.version !== cur) {
-                V.openModal('<h3>有新版本可用</h3><p class="sub">建议先备份账单（设置 → 完整导出），刷新页面将会直接更新到最新版本。</p>' +
-                    '<div class="modal-actions"><button class="btn primary" data-act="closeModal">知道了</button></div>');
-            } else { U.toast('已开启自动更新，将在启动时自动更新'); }
-            if (state.view === 'settings') render();
-        }).catch(function () { U.toast('已开启自动更新，将在启动时自动更新'); if (state.view === 'settings') render(); });
-    }
-
     // 事件分发回调对应表
     var ACTIONS = {
         closeModal: closeModalAct,
@@ -349,7 +326,6 @@
         doClearAll: doClearAll,
         editStorageCfg: function () { V.modalStorageCfg(); },
         saveStorageCfg: saveStorageCfg,
-        toggleUpdate: toggleUpdate,
         send: function () { ZH.chat.handleSend(); },
         chatSend: function () { if (state.chatBusy) ZH.chat.stopRequest(); else ZH.chat.handleSend(); },
         userMsg: function (el) { ZH.chat.askDeleteUserMsg(el); },
@@ -403,19 +379,46 @@
     }
     function onSystemThemeChange() { if ((state.settings.theme || 'system') === 'system') applyTheme(); }
 
-    /* ---------- 版本检查与自动升级（重构：不依赖 HTTP 缓存时序） ---------- */
-    function settleUpgrade() {
-        var s = Store.get(K.upgrade, null); // 检查升级标志位
-        if (s && s.phase === 'pending') { // pending状态，说明已经升级完成
-            var d = { phase: 'done', version: s.to || window.APP_VERSION, notes: s.notes || '', at: Date.now() }; // 已经升级，标志位调整为done
-            Store.set(K.upgrade, d); // 升级标志位置位
-            console.log('[升级完成] 本地加载到 ' + window.APP_VERSION + '，期望 ' + (s.to || '?'));
-            return d;
+    /* ---------- 版本检查与自动升级 ---------- */
+    // 按数字段比较版本号（1.10.0 > 1.9.0）；缺失段按 0 处理
+    function compareVersion(a, b) {
+        function parts(v) {
+            return String(v == null ? '' : v).split(/[^0-9]+/).filter(Boolean).map(function (n) {
+                return parseInt(n, 10) || 0;
+            });
         }
-        if (!s) { // 升级后首次加载
-            Store.set(K.upgrade, { phase: 'done', version: window.APP_VERSION, notes: '', at: Date.now() });
+        var pa = parts(a), pb = parts(b), n = Math.max(pa.length, pb.length);
+        for (var i = 0; i < n; i++) {
+            var x = pa[i] || 0, y = pb[i] || 0;
+            if (x !== y) return x > y ? 1 : -1;
         }
-        return null;
+        return 0;
+    }
+
+    /* 升级提示结算：
+       - 仅当实际加载版本比已提示版本更新时才提示；
+       - 加载到更低版本时不提示，也不回写标记，避免旧缓存导致反复弹窗；
+       - 首次安装或标记缺失时静默记录当前版本。 */
+    function settleVersionNotice() {
+        var previous = Store.get(K.versionNotice, null);
+        var hasPrevious = typeof previous === 'string' && previous !== '';
+        var shouldShow = false;
+
+        if (hasPrevious) {
+            var cmp = compareVersion(window.APP_VERSION, previous);
+            if (cmp < 0) {
+                console.warn('[升级提示] 当前加载版本 ' + window.APP_VERSION + ' 低于已提示版本 ' + previous + '，按旧缓存处理，不弹窗');
+                return null;
+            }
+            shouldShow = cmp > 0;
+        }
+
+        var saved = previous === window.APP_VERSION || Store.set(K.versionNotice, window.APP_VERSION);
+        if (!saved) {
+            console.warn('[升级提示] 无法保存已展示版本，已跳过提示以避免重复弹窗');
+            return null;
+        }
+        return shouldShow ? (window.APP_NOTES || '') : null;
     }
 
     /* 升级好了：只提示成功与本次更新内容 */
@@ -427,48 +430,60 @@
             '<div class="modal-actions"><button class="btn primary" data-act="closeModal">知道了</button></div>');
     }
 
-    // 自动更新
-    function triggerUpgrade(v, cur) {
-        var ok = Store.set(K.upgrade, { phase: 'pending', to: v.version, notes: v.notes || '', from: cur, at: Date.now() });
-        if (!ok) { console.warn('[升级检测] 升级记录写入失败（存储可能已满），本次不刷新'); return false; }
-        console.log('[升级检测] 有新版本 ' + cur + ' → ' + v.version + '，刷新加载最新资源');
-        try { // 添加版本区分，强制重新获取
+    function fetchLatestVersion() {
+        return fetch('version.json', { cache: 'no-store' }).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (v) {
+            if (!v || typeof v.version !== 'string' || !v.version.trim()) {
+                throw new Error('version.json 缺少有效版本号');
+            }
+            return v;
+        });
+    }
+
+    function readRequestedAssetVersion() {
+        var requested = '';
+        try {
             var u = new URL(location.href);
-            u.searchParams.set('_v', encodeURIComponent(v.version));
+            requested = u.searchParams.get('_v') || '';
+            if (requested) {
+                u.searchParams.delete('_v');
+                history.replaceState(history.state, '', u.toString());
+            }
+        } catch (e) {
+            console.warn('[升级检测] 无法读取或清理资源版本参数', e);
+        }
+        return requested;
+    }
+
+    // 添加版本区分，强制重新获取静态资源；不依赖 localStorage 才能执行刷新。
+    function triggerUpgrade(v) {
+        console.log('[升级检测] 服务器版本=' + v.version + '，当前加载版本=' + window.APP_VERSION + '，刷新加载最新资源');
+        try {
+            var u = new URL(location.href);
+            u.searchParams.set('_v', v.version);
             location.replace(u.toString());
         } catch (e) {
-            try { location.reload(); } catch (e2) { /* 环境无法刷新（如测试），由下次启动检测兜底 */ }
-        }
-        return true;
-    }
-
-    /* 启动时检查更新：拉远程 version.json，与本地“已完成版本”对比；不同才触发。 */
-    function checkVersion() {
-        if (!state.settings.checkUpdate) return;
-        fetch('version.json', { cache: 'no-store' }).then(function (r) {
-            if (!r.ok) throw 0; return r.json();
-        }).then(function (v) {
-            if (!v || !v.version) return;
-            var s = Store.get(K.upgrade, null) || {};
-            var cur = s.version || window.APP_VERSION;
-            console.log('[升级检测] 服务器=' + v.version + ' 本地已加载=' + cur);
-            if (v.version === cur) return; // 一致：已是最新
-            triggerUpgrade(v, cur);
-        }).catch(function () { });
-    }
-
-    /* ---------- iOS 引导 ---------- */
-    function iosGuide() {
-        try {
-            var isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-            var isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
-            var hasData = state.index.length > 0;
-            if (isIOS && !isStandalone && hasData && !Store.get(K.iosGuided, false)) {
-                Store.set(K.iosGuided, true);
-                V.openModal('<h3>建议添加到主屏幕</h3><p class="sub">在 Safari 中点击"分享 → 添加到主屏幕"，可避免本地数据被系统清理。</p>' +
-                    '<div class="modal-actions"><button class="btn primary" data-act="closeModal">知道了</button></div>');
+            console.warn('[升级检测] 强制刷新失败，尝试普通刷新', e);
+            try { location.reload(); } catch (e2) {
+                console.warn('[升级检测] 页面刷新失败', e2);
             }
-        } catch (e) { }
+        }
+    }
+
+    /* 检查始终比较实际加载的代码版本（固定开启，无开关）；_v 防止缓存未更新时同一次启动无限刷新。 */
+    function checkVersion(requestedAssetVersion) {
+        fetchLatestVersion().then(function (v) {
+            if (v.version === window.APP_VERSION) return;
+            if (requestedAssetVersion === v.version) {
+                console.warn('[升级检测] 已按版本号刷新过资源，但当前加载版本仍未更新；本次不再循环刷新');
+                return;
+            }
+            triggerUpgrade(v);
+        }).catch(function (e) {
+            console.warn('[升级检测] 无法检查更新', e);
+        });
     }
 
     /* ---------- 启动 ---------- */
@@ -477,15 +492,12 @@
         if (booted) return; // 幂等：避免自动启动与手动触发重复初始化/重复绑定事件
         booted = true;
         loadSettings(); applyTheme(); loadIndex();
-        /* 升级结算（本地、同步、零网络）：若上次留有 pending 记录，说明升级已生效，
-           本次即为“刚升级完成”→ 标记 done 并准备弹窗。*/
-        var didUpgrade = false, upgradeNotes = '';
-        var settled = settleUpgrade();
-        if (settled) { didUpgrade = true; upgradeNotes = settled.notes || ''; }
+        var requestedAssetVersion = readRequestedAssetVersion();
+        var upgradeNotes = settleVersionNotice();
+        var didUpgrade = upgradeNotes !== null;
         var tm = themeMedia();
         if (tm) { if (tm.addEventListener) tm.addEventListener('change', onSystemThemeChange); else if (tm.addListener) tm.addListener(onSystemThemeChange); }
-        /* 升级提示优先：升级期间不自动弹 iOS 引导，避免被其抢走或被覆盖 */
-        S.persistStorage(); checkVersion(); if (!didUpgrade) iosGuide();
+        S.persistStorage(); checkVersion(requestedAssetVersion);
         // current 指针失效但索引仍有账本时，回落到最近使用的账本，避免用户被困在无账本态
         if (!(state.currentId && findIndexItem(state.currentId)) && state.index.length) {
             state.currentId = state.index[0].id;

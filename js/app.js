@@ -15,7 +15,6 @@
 
     function loadSettings() {
         state.settings = Store.get(K.settings, { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-chat', theme: 'system' });
-        delete state.settings.checkUpdate; // 旧版「启动时自动更新」开关已移除，更新检查固定开启
         if (!state.settings.theme) state.settings.theme = 'system';
         if (!state.settings.storageCapUnits) state.settings.storageCapUnits = S.DEFAULT_CAP_UNITS; // 总量上限，默认 4MB
         if (!state.settings.ledgerCapUnits) state.settings.ledgerCapUnits = S.DEFAULT_LEDGER_CAP_UNITS; // 单账本名义上限，默认 800K
@@ -397,13 +396,11 @@
     }
 
     /* 升级提示结算：
-       - 仅当「当前实际加载的版本」比「已提示过的版本」更新时才提示；
-       - 加载到旧缓存（版本倒退，如残留 Service Worker/HTTP 旧副本）时既不提示，
-         也不把标记改回旧值，否则新旧代码交替加载会反复弹窗；
+       - 仅当实际加载版本比已提示版本更新时才提示；
+       - 加载到更低版本时不提示，也不回写标记，避免旧缓存导致反复弹窗；
        - 首次安装或标记缺失时静默记录当前版本。 */
     function settleVersionNotice() {
         var previous = Store.get(K.versionNotice, null);
-        var legacy = Store.get(K.upgrade, null);
         var hasPrevious = typeof previous === 'string' && previous !== '';
         var shouldShow = false;
 
@@ -411,16 +408,12 @@
             var cmp = compareVersion(window.APP_VERSION, previous);
             if (cmp < 0) {
                 console.warn('[升级提示] 当前加载版本 ' + window.APP_VERSION + ' 低于已提示版本 ' + previous + '，按旧缓存处理，不弹窗');
-                Store.del(K.upgrade);
                 return null;
             }
             shouldShow = cmp > 0;
-        } else if (legacy && legacy.phase === 'pending' && legacy.to === window.APP_VERSION) {
-            shouldShow = true; // 兼容旧状态机：目标版本已实际加载，补一次提示
         }
 
         var saved = previous === window.APP_VERSION || Store.set(K.versionNotice, window.APP_VERSION);
-        Store.del(K.upgrade);
         if (!saved) {
             console.warn('[升级提示] 无法保存已展示版本，已跳过提示以避免重复弹窗');
             return null;
@@ -493,20 +486,6 @@
         });
     }
 
-    /* ---------- iOS 引导 ---------- */
-    function iosGuide() {
-        try {
-            var isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
-            var isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
-            var hasData = state.index.length > 0;
-            if (isIOS && !isStandalone && hasData && !Store.get(K.iosGuided, false)) {
-                Store.set(K.iosGuided, true);
-                V.openModal('<h3>建议添加到主屏幕</h3><p class="sub">在 Safari 中点击"分享 → 添加到主屏幕"，可避免本地数据被系统清理。</p>' +
-                    '<div class="modal-actions"><button class="btn primary" data-act="closeModal">知道了</button></div>');
-            }
-        } catch (e) { }
-    }
-
     /* ---------- 启动 ---------- */
     var booted = false;
     function boot() {
@@ -518,8 +497,7 @@
         var didUpgrade = upgradeNotes !== null;
         var tm = themeMedia();
         if (tm) { if (tm.addEventListener) tm.addEventListener('change', onSystemThemeChange); else if (tm.addListener) tm.addListener(onSystemThemeChange); }
-        /* 升级提示优先：升级期间不自动弹 iOS 引导，避免被其抢走或被覆盖 */
-        S.persistStorage(); checkVersion(requestedAssetVersion); if (!didUpgrade) iosGuide();
+        S.persistStorage(); checkVersion(requestedAssetVersion);
         // current 指针失效但索引仍有账本时，回落到最近使用的账本，避免用户被困在无账本态
         if (!(state.currentId && findIndexItem(state.currentId)) && state.index.length) {
             state.currentId = state.index[0].id;

@@ -9,10 +9,7 @@
         chat: function (id) { return 'zh:chat:' + id; },
         pending: function (id) { return 'zh:pending:' + id; },
         lastExport: function (id) { return 'zh:lastExport:' + id; },
-        iosGuided: 'zh:iosGuided',
-        /* 记录已处理升级提示的代码版本；更新检查始终以 APP_VERSION 为准。 */
-        versionNotice: 'zh:versionNotice',
-        upgrade: 'zh:upgrade'
+        versionNotice: 'zh:versionNotice'
     };
 
     // 假定容量上限（UTF-16 单元数）：总量 默认4MB，单账本正文 默认800K

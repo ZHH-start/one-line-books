@@ -24,8 +24,8 @@
 
 # 用户与运行环境
 
-- 主要用户：开发者本人；次要用户：非技术用户（iPhone，Safari 添加到主屏幕使用）。
-- 目标环境：iOS Safari（主屏 standalone 模式）、Android Chrome、桌面浏览器三端跨平台。
+- 主要用户：开发者本人；次要用户：非技术用户（iPhone Safari）。
+- 目标环境：iOS Safari、Android Chrome、桌面浏览器三端跨平台。
 - 部署：家庭 ARM 服务器 + 内网穿透，nginx 静态托管，Basic Auth 由部署层负责（不属于本应用）。
 # 核心交互流程
 
@@ -296,7 +296,6 @@ localStorage 容量有限（各浏览器约 5MB，配额偏紧时写入会抛 `Q
 
 本地存储防清理（数据在浏览器 localStorage，存在被系统/清理工具抹掉的风险）：
 - 启动时调用 `navigator.storage.persist()` 请求持久存储。
-- iOS 检测：非 standalone 模式且本地已有账本数据时，引导用户"添加到主屏幕"
 
 不得有需要构建的步骤。依赖尽可能少。
 
